@@ -1,0 +1,214 @@
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 2.75h7l4 4v14.5H7zM14 3v4h4M10 12h5M10 15h5" /></svg></span>
+    <strong>Paper<span>Signal</span></strong>
+  </div>
+  <div class="api-state" [class.offline]="healthError() || health()?.status !== 'ok'">
+    <span class="state-dot"></span>@if (healthLoading()) { Checking } @else if (healthError()) { Offline } @else { Connected }
+  </div>
+</header>
+
+<main class="shell">
+  @if (!healthLoading() && health() && !health()?.ai_configured) {
+    <aside class="notice warning" role="alert"><div><strong>Extraction is switched off</strong><p>Add <code>MISTRAL_API_KEYS</code> to <code>backend/.env</code> and restart the backend.</p></div><button type="button" class="link" (click)="loadHealth()">Check again</button></aside>
+  }
+  @if (healthError()) {
+    <aside class="notice error" role="alert"><div><strong>Backend is not responding</strong><p>Start the API on port 8000, then reconnect.</p></div><button type="button" class="link" (click)="loadHealth()">Retry</button></aside>
+  }
+
+  @if (setupOpen()) {
+    <section class="card setup" aria-labelledby="setup-title">
+      <h1 id="setup-title" class="card-title">Extract data from PDFs</h1>
+      <p class="card-sub">Pick your files, define the JSON Schema, and get one row per PDF.</p>
+
+      <div class="setup-grid">
+        <div class="setup-col">
+          <h2 class="step"><span class="step-num">1</span> Choose PDFs</h2>
+          <label class="drop" tabindex="0" role="button" aria-label="Add PDF files" [class.dragging]="isDragging()" [class.filled]="selectedFiles().length" (keydown.enter)="$event.preventDefault(); fileInput.click()" (keydown.space)="$event.preventDefault(); fileInput.click()" (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)">
+            <input #fileInput tabindex="-1" type="file" multiple accept="application/pdf,.pdf" (change)="onFileInput($event)" />
+            <span class="drop-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M7 18.5v7h18v-7M16 22V6m0 0-6 6m6-6 6 6" /></svg></span>
+            <span class="drop-text"><strong>Drop PDFs here or click to browse</strong><small>Up to {{ maxBatchFiles() }} files &middot; max {{ health()?.max_pdf_pages || 40 }} pages each</small></span>
+          </label>
+
+          @if (selectedFiles().length) {
+            <ul class="chips">
+              @for (file of selectedFiles(); track file.name + file.size) {
+                <li><span class="chip-name">{{ file.name }}</span><button type="button" class="chip-x" [attr.aria-label]="'Remove ' + file.name" (click)="removeFile(file, $event)">&times;</button></li>
+              }
+            </ul>
+            <p class="chips-foot">{{ selectedFiles().length }} file{{ selectedFiles().length === 1 ? '' : 's' }} &middot; {{ humanSize(totalFileBytes()) }}<button type="button" class="link" (click)="clearFiles($event)">Clear all</button></p>
+          }
+          @if (fileRejections().length) {
+            <ul class="rejects" role="alert">@for (item of fileRejections(); track item.file_name + item.error) { <li><strong>{{ item.file_name }}</strong> {{ item.error }}</li> }</ul>
+          }
+        </div>
+
+        <div class="setup-col">
+          <div class="col-head">
+            <h2 class="step"><span class="step-num">2</span> What to extract</h2>
+            @if (inputMode() === 'simple') { <button type="button" class="link" (click)="useJsonSchema()">Use JSON Schema</button> } @else { <button type="button" class="link" (click)="useSimpleFields()">Use simple fields</button> }
+          </div>
+
+          @if (inputMode() === 'simple') {
+            <div class="fields">
+              @for (field of fields(); track $index) {
+                <div class="field-row">
+                  <input type="text" class="field-name" [attr.aria-label]="'Field name ' + ($index + 1)" placeholder="Field name, e.g. trainNumber" [ngModel]="field.name" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateFieldName($index, $event)" />
+                  <select class="field-type" [attr.aria-label]="'Type for field ' + ($index + 1)" [ngModel]="field.type" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateFieldType($index, $event)">
+                    @for (option of fieldTypes; track option.value) { <option [value]="option.value">{{ option.label }}</option> }
+                  </select>
+                  <button type="button" class="field-x" [disabled]="fields().length === 1" [attr.aria-label]="'Remove field ' + ($index + 1)" (click)="removeField($index)">&times;</button>
+                </div>
+              }
+            </div>
+            <button type="button" class="ghost" (click)="addField()">+ Add field</button>
+            <p class="hint">Each field becomes a column. A value that is not in the PDF comes back empty.</p>
+          } @else {
+            <p class="contract-note"><strong>Only JSON Schema is accepted</strong>Define the exact fields and nesting to extract. Missing values become <code>null</code>; extra fields are removed.</p>
+            <label for="template" class="sr-only">Required JSON Schema</label>
+            <textarea id="template" name="template" [(ngModel)]="outputTemplate" (ngModelChange)="validateSchemaInput()" maxlength="12000" rows="11" class="code-input" placeholder='{ "type": "object", "properties": { "trainName": { "type": "string" }, "trainNumber": { "type": "number" } } }' required></textarea>
+            <div class="schema-checks" aria-live="polite">
+              <span [class.ready]="schemaChecks().validJson">{{ schemaChecks().validJson ? '&#10003;' : '&#9675;' }} Valid JSON</span>
+              <span [class.ready]="schemaChecks().rootObject">{{ schemaChecks().rootObject ? '&#10003;' : '&#9675;' }} Root object</span>
+              <span [class.ready]="schemaChecks().properties">{{ schemaChecks().properties ? '&#10003;' : '&#9675;' }} Non-empty properties</span>
+              <span [class.ready]="schemaChecks().supported">{{ schemaChecks().supported ? '&#10003;' : '&#9675;' }} Supported nesting</span>
+            </div>
+          }
+          @if (schemaError) { <p class="field-error" role="alert">{{ schemaError }}</p> }
+          @else if (inputMode() === 'advanced' && outputTemplate.trim()) { <p class="schema-ready" role="status">Schema ready for this batch.</p> }
+        </div>
+      </div>
+
+      <div class="setup-foot">
+        <details class="advanced">
+          <summary>Reading options</summary>
+          <div class="segmented" role="group" aria-label="Reading options">
+            <label><input type="radio" name="ocr" [(ngModel)]="ocrMode" value="auto" /><span>Automatic <small>Recommended</small></span></label>
+            <label><input type="radio" name="ocr" [(ngModel)]="ocrMode" value="always" /><span>Scanned pages <small>Always read images</small></span></label>
+            <label><input type="radio" name="ocr" [(ngModel)]="ocrMode" value="never" /><span>Text only <small>Skip image reading</small></span></label>
+          </div>
+        </details>
+        <button class="primary-action" type="button" [disabled]="!canSubmit()" (click)="submit()">
+          @if (submitting()) { <span class="spinner"></span> Uploading {{ uploadProgress() }}% } @else { Extract from {{ selectedFiles().length }} PDF{{ selectedFiles().length === 1 ? '' : 's' }} }
+        </button>
+      </div>
+
+      @if (!health()?.ai_configured) { <p class="disabled-hint">Extraction becomes available once the API keys are set.</p> }
+      @if (submitError) { <p class="submit-error" role="alert">{{ submitError }}</p> }
+    </section>
+  } @else {
+    <section class="card setup-bar">
+      <div><strong>{{ tableJobs().length }} PDF{{ tableJobs().length === 1 ? '' : 's' }} submitted</strong><span>{{ columns().length }} field{{ columns().length === 1 ? '' : 's' }} requested</span></div>
+      <div class="bar-actions">
+        <button type="button" class="secondary" (click)="setupOpen.set(true)">Add more PDFs</button>
+        <button type="button" class="secondary" (click)="startNew()">Start over</button>
+      </div>
+    </section>
+  }
+
+  <section class="card results" aria-labelledby="results-title">
+    <div class="results-head">
+      <div>
+        <h2 id="results-title">Results</h2>
+        @if (tableJobs().length) { <p class="results-count" aria-live="polite">{{ finishedCount() }} of {{ tableJobs().length }} finished</p> }
+      </div>
+      @if (tableJobs().length) {
+        <div class="results-actions">
+          <button type="button" class="secondary" (click)="downloadCsv()">Download CSV</button>
+          <button type="button" class="secondary" (click)="copyBatchJson()">{{ batchCopied() ? 'Copied!' : 'Copy JSON' }}</button>
+        </div>
+      }
+    </div>
+
+    @if (batchSummary(); as batch) {
+      @if (batch.rejected.length) {
+        <ul class="rejects" role="alert">@for (item of batch.rejected; track item.file_name + item.error) { <li><strong>{{ item.file_name }}</strong> {{ item.error }}</li> }</ul>
+      }
+    }
+
+    @if (!tableJobs().length) {
+      <div class="empty">
+        <span class="empty-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M6 5.5h13l7 7v19H6zM19 6v7h7M11 19h10M11 23h10" /></svg></span>
+        <strong>No results yet</strong>
+        <p>Choose your PDFs and fields above, then press Extract. Every file appears here as one row.</p>
+      </div>
+    } @else {
+      <ul class="result-list">
+        @for (job of tableJobs(); track job.id) {
+          <li class="result-item" [class.is-open]="expandedJobId() === job.id" [class.is-failed]="job.status === 'failed'">
+            <button type="button" class="result-head" [attr.aria-expanded]="expandedJobId() === job.id" (click)="toggleDetails(job)">
+              <span class="chev" aria-hidden="true"></span>
+              <span class="file-name" [title]="filename(job)">{{ filename(job) }}</span>
+              @if (job.status === 'completed') { <span class="pill done"><span aria-hidden="true">&#10003;</span> Done</span> }
+              @else if (job.status === 'failed') { <span class="pill failed"><span aria-hidden="true">!</span> Failed</span> }
+              @else if (job.status === 'queued') { <span class="pill wait">Waiting</span> }
+              @else { <span class="pill run">{{ job.progress || 0 }}%</span> }
+            </button>
+
+            @if (expandedJobId() === job.id) {
+              <div class="result-body">
+                @if (job.status === 'failed') {
+                  <div class="incident" role="alert"><strong>{{ job.error || 'The extraction did not complete.' }}</strong><p>{{ retryGuidance(job) }}</p></div>
+                } @else if (job.status !== 'completed') {
+                  <div class="running"><div class="running-bar"><span [style.width.%]="job.progress || 0"></span></div><p>{{ job.status === 'queued' ? 'Waiting in queue — starts automatically once the running files finish.' : (job.stage || 'Processing') + ' · ' + (job.progress || 0) + '%' }}</p></div>
+                } @else {
+                  <div class="json-head"><h3>Extracted JSON</h3><button type="button" class="secondary" (click)="copyJobJson(job)">{{ copiedJobId() === job.id ? 'Copied!' : 'Copy JSON' }}</button></div>
+                  <pre class="json-view">{{ prettyJson(resultData(job)) }}</pre>
+                }
+
+                <details class="tech">
+                  <summary>Extraction audit</summary>
+                  <div class="tech-body">
+                    <ol class="route">
+                      <li class="python-step" [class.done]="readingRouteIsDone(job, 'python')" [class.skipped]="readingRouteWasSkipped(job, 'python')"><strong>Text layer</strong><small>{{ readingRouteLabel(job, 'python') }}</small></li>
+                      <li class="vision-step" [class.done]="readingRouteIsDone(job, 'vision')" [class.skipped]="readingRouteWasSkipped(job, 'vision')"><strong>Image reading</strong><small>{{ readingRouteLabel(job, 'vision') }}</small></li>
+                      <li class="ocr-step" [class.done]="readingRouteIsDone(job, 'ocr')" [class.skipped]="readingRouteWasSkipped(job, 'ocr')"><strong>OCR fallback</strong><small>{{ readingRouteLabel(job, 'ocr') }}</small></li>
+                    </ol>
+                    <dl class="tech-grid">
+                      <div><dt>Pages</dt><dd>{{ job.page_count ?? '—' }}</dd></div>
+                      <div><dt>Text pages</dt><dd>{{ pythonPages(job) ?? '—' }}</dd></div>
+                      <div><dt>Image pages tried</dt><dd>{{ job.vision_attempted_pages ?? 0 }}</dd></div>
+                      <div><dt>Image pages read</dt><dd>{{ visionPages(job) }}</dd></div>
+                      <div><dt>OCR pages</dt><dd>{{ job.ocr_pages ?? 0 }} ({{ ocrCoverage(job) }}%)</dd></div>
+                      <div><dt>Duration</dt><dd>{{ duration(job) }}</dd></div>
+                      <div><dt>File size</dt><dd>{{ job.file_size != null ? humanSize(job.file_size) : '—' }}</dd></div>
+                      <div><dt>Reading option</dt><dd>{{ job.ocr_mode || 'auto' }}</dd></div>
+                      <div><dt>Text model</dt><dd class="mono">{{ job.text_model || health()?.text_model || '—' }}</dd></div>
+                      <div><dt>Vision model</dt><dd class="mono">{{ visionModel(job) }}</dd></div>
+                      <div><dt>OCR model</dt><dd class="mono">{{ ocrModel(job) }}</dd></div>
+                      <div><dt>Job ID</dt><dd class="mono truncate" [title]="job.id">{{ job.id }}</dd></div>
+                    </dl>
+                    @if (evidenceFor(job).length) {
+                      <h3>Where the values came from</h3>
+                      <ul class="evidence">@for (item of evidenceFor(job); track $index) { <li><span class="page">Page {{ evidencePage(item) }}</span><span>@if (item.label || item.field) { <strong>{{ item.label || item.field }}</strong> }&ldquo;{{ evidenceText(item) }}&rdquo;</span></li> }</ul>
+                    }
+                  </div>
+                </details>
+              </div>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </section>
+
+  <details class="card history">
+    <summary><span>Earlier jobs</span><button type="button" class="link" (click)="$event.preventDefault(); $event.stopPropagation(); loadRecentJobs()">Refresh</button></summary>
+    @if (recentLoading()) { <p class="history-note">Loading…</p> }
+    @else if (recentError()) { <p class="history-note">History is unavailable. Connect the backend to see past jobs.</p> }
+    @else if (!recentJobs().length) { <p class="history-note">No jobs yet.</p> }
+    @else {
+      <ul class="history-list">
+        @for (job of recentJobs(); track job.id) {
+          <li>
+            <button type="button" class="history-open" (click)="openJob(job)"><span class="file-name">{{ filename(job) }}</span><small>{{ formatTime(job.created_at || job.updated_at) }}</small></button>
+            <span class="pill" [class.done]="job.status === 'completed'" [class.failed]="job.status === 'failed'" [class.run]="job.status === 'processing'" [class.wait]="job.status === 'queued'">{{ statusLabel(job) }}</span>
+            <button type="button" class="chip-x" [disabled]="job.status === 'processing'" [attr.aria-label]="'Delete ' + filename(job)" (click)="deleteJob($event, job)">&times;</button>
+          </li>
+        }
+      </ul>
+    }
+  </details>
+
+  <footer class="foot">Files stay on this machine. Page content is sent to the AI service only when a page needs it.</footer>
+</main>

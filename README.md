@@ -127,7 +127,8 @@ curl -H "X-API-Key: ps_live_..." http://localhost:8000/api/jobs/<job_id>
 curl -H "X-API-Key: ps_live_..." http://localhost:8000/api/usage
 ```
 
-Interactive docs live at `/api/docs`.
+Interactive docs live at `/api/docs`. The full endpoint reference — every route, every field,
+every status code, and exactly what an API key controls — is in [API.md](API.md).
 
 ### What a key controls
 

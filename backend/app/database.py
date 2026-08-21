@@ -22,6 +22,7 @@ class JobDatabase:
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY,
                     batch_id TEXT,
+                    api_key_id TEXT,
                     file_name TEXT NOT NULL,
                     file_path TEXT NOT NULL,
                     file_size INTEGER NOT NULL,
@@ -56,6 +57,7 @@ class JobDatabase:
             }
             migrations = {
                 "batch_id": "TEXT",
+                "api_key_id": "TEXT",
                 "python_text_pages": "INTEGER NOT NULL DEFAULT 0",
                 "vision_attempted_pages": "INTEGER NOT NULL DEFAULT 0",
                 "vision_pages": "INTEGER NOT NULL DEFAULT 0",
@@ -82,7 +84,7 @@ class JobDatabase:
         data = job.model_dump(mode="json")
         data["result_json"] = json.dumps(data.pop("result")) if job.result is not None else None
         columns = [
-            "id", "batch_id", "file_name", "file_path", "file_size", "instruction", "output_template",
+            "id", "batch_id", "api_key_id", "file_name", "file_path", "file_size", "instruction", "output_template",
             "ocr_mode", "status", "progress", "stage", "error", "result_json",
             "page_count", "ocr_pages", "created_at", "updated_at"
             , "python_text_pages", "text_model", "ocr_model", "schema_mode",
@@ -97,16 +99,26 @@ class JobDatabase:
             connection.commit()
         return job
 
-    def get(self, job_id: str) -> JobRecord | None:
+    def get(self, job_id: str, api_key_id: str | None = None) -> JobRecord | None:
+        query = "SELECT * FROM jobs WHERE id = ?"
+        params: list[Any] = [job_id]
+        if api_key_id is not None:
+            query += " AND api_key_id = ?"
+            params.append(api_key_id)
         with self._lock, self._connect() as connection:
-            row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            row = connection.execute(query, params).fetchone()
         return self._row_to_record(row) if row else None
 
-    def list_recent(self, limit: int = 20) -> list[JobRecord]:
+    def list_recent(self, limit: int = 20, api_key_id: str | None = None) -> list[JobRecord]:
+        query = "SELECT * FROM jobs"
+        params: list[Any] = []
+        if api_key_id is not None:
+            query += " WHERE api_key_id = ?"
+            params.append(api_key_id)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
         with self._lock, self._connect() as connection:
-            rows = connection.execute(
-                "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
-            ).fetchall()
+            rows = connection.execute(query, params).fetchall()
         return [self._row_to_record(row) for row in rows]
 
     def get_many(self, job_ids: list[str]) -> list[JobRecord]:
@@ -121,12 +133,15 @@ class JobDatabase:
         records = {record.id: record for record in (self._row_to_record(row) for row in rows)}
         return [records[job_id] for job_id in unique_ids if job_id in records]
 
-    def list_by_batch(self, batch_id: str) -> list[JobRecord]:
+    def list_by_batch(self, batch_id: str, api_key_id: str | None = None) -> list[JobRecord]:
+        query = "SELECT * FROM jobs WHERE batch_id = ?"
+        params: list[Any] = [batch_id]
+        if api_key_id is not None:
+            query += " AND api_key_id = ?"
+            params.append(api_key_id)
+        query += " ORDER BY created_at ASC, id ASC"
         with self._lock, self._connect() as connection:
-            rows = connection.execute(
-                "SELECT * FROM jobs WHERE batch_id = ? ORDER BY created_at ASC, id ASC",
-                (batch_id,),
-            ).fetchall()
+            rows = connection.execute(query, params).fetchall()
         return [self._row_to_record(row) for row in rows]
 
     def update(self, job_id: str, **changes: Any) -> JobRecord:

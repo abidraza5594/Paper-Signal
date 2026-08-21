@@ -1,17 +1,29 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from .api_keys import (
+    ApiKeyError,
+    ApiKeyRecord,
+    ApiKeyStore,
+    RateLimitExceeded,
+    RateLimiter,
+    current_period,
+)
 from .config import get_settings
 from .database import JobDatabase
 from .job_service import JobQueueFullError, JobRunner
 from .models import (
+    ApiKeyCreated,
+    ApiKeyCreateRequest,
+    ApiKeyPublic,
     BatchFileRejection,
     BatchJobResponse,
     HealthResponse,
@@ -19,6 +31,7 @@ from .models import (
     JobRecord,
     JobStatus,
     OcrMode,
+    UsageResponse,
 )
 from .pdf_service import PdfProcessingError, PdfTextService
 from .schema_service import OutputSchemaError, parse_json_schema_contract
@@ -31,11 +44,18 @@ settings.prepare_directories()
 database = JobDatabase(settings.database_path)
 storage = LocalStorage(settings.upload_dir, settings.max_upload_bytes)
 runner = JobRunner(settings, database)
+api_keys = ApiKeyStore(settings.api_keys_database_path)
+rate_limiter = RateLimiter()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     database.initialize()
+    api_keys.initialize()
+    if settings.require_api_key and not settings.admin_token_value:
+        logging.getLogger(__name__).warning(
+            "REQUIRE_API_KEY is on but ADMIN_TOKEN is not set: no new keys can be issued."
+        )
     yield
     runner.shutdown()
 
@@ -52,14 +72,97 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "X-API-Key", "Authorization"],
 )
+
+
+def _extract_key(x_api_key: str | None, authorization: str | None) -> str | None:
+    if x_api_key and x_api_key.strip():
+        return x_api_key.strip()
+    if authorization and authorization.lower().startswith("bearer "):
+        candidate = authorization[7:].strip()
+        return candidate or None
+    return None
+
+
+def require_caller(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None),
+) -> ApiKeyRecord | None:
+    """Resolve the calling client.
+
+    With REQUIRE_API_KEY off (local development) an anonymous caller is allowed and
+    its jobs are stored without an owner. With it on, a valid key is mandatory and
+    every job is scoped to that key.
+    """
+    raw_key = _extract_key(x_api_key, authorization)
+    if raw_key is None:
+        if settings.require_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Send your key in the X-API-Key header.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return None
+
+    record = api_keys.find_by_raw_key(raw_key)
+    if record is None or not record.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This API key is not valid or has been revoked.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        rate_limiter.check(record.id, record.rate_limit_per_minute)
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Rate limit of {record.rate_limit_per_minute} requests per minute exceeded.",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
+    api_keys.touch(record.id)
+    return record
+
+
+def require_admin(
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+) -> None:
+    expected = settings.admin_token_value
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ADMIN_TOKEN is not configured, so keys cannot be managed over HTTP.",
+        )
+    if not x_admin_token or not secrets.compare_digest(x_admin_token, expected):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="A valid X-Admin-Token header is required.",
+        )
+
+
+def _owner_id(caller: ApiKeyRecord | None) -> str | None:
+    return caller.id if caller else None
+
+
+def _check_quota(caller: ApiKeyRecord | None, documents: int) -> None:
+    if caller is None or documents <= 0:
+        return
+    used = api_keys.documents_used(caller.id)
+    if used + documents > caller.monthly_document_quota:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                f"Monthly quota of {caller.monthly_document_quota} documents would be exceeded "
+                f"({used} already used this period)."
+            ),
+        )
 
 
 @app.get("/api/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(
         ai_configured=settings.ai_configured,
+        require_api_key=settings.require_api_key,
         max_upload_mb=settings.max_upload_mb,
         max_pdf_pages=settings.max_pdf_pages,
         max_batch_files=settings.max_batch_files,
@@ -84,6 +187,7 @@ async def _prepare_job(
     ocr_mode: OcrMode,
     schema_mode: str,
     batch_id: str | None = None,
+    api_key_id: str | None = None,
 ) -> JobRecord:
     path, size, original_name = await storage.save_pdf(file)
     try:
@@ -96,6 +200,7 @@ async def _prepare_job(
         return JobRecord(
             id=uuid.uuid4().hex,
             batch_id=batch_id,
+            api_key_id=api_key_id,
             file_name=original_name,
             file_path=str(path),
             file_size=size,
@@ -132,19 +237,26 @@ async def create_job(
     file: UploadFile = File(...),
     output_template: str = Form(..., min_length=2, max_length=12000),
     ocr_mode: OcrMode = Form(default=OcrMode.auto),
+    caller: ApiKeyRecord | None = Depends(require_caller),
 ) -> JobPublic:
     _ensure_ai_configured()
+    _check_quota(caller, 1)
     try:
         contract = parse_json_schema_contract(output_template)
     except OutputSchemaError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
     try:
-        job = await _prepare_job(file, output_template, ocr_mode, contract.mode)
+        job = await _prepare_job(
+            file, output_template, ocr_mode, contract.mode, api_key_id=_owner_id(caller)
+        )
     except (UploadValidationError, PdfProcessingError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     try:
-        return _enqueue_job(job)
+        accepted = _enqueue_job(job)
+        if caller:
+            api_keys.record_documents(caller.id, 1, job.page_count or 0)
+        return accepted
     except JobQueueFullError as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
 
@@ -158,6 +270,7 @@ async def create_job_batch(
     files: list[UploadFile] = File(...),
     output_template: str = Form(..., min_length=2, max_length=12000),
     ocr_mode: OcrMode = Form(default=OcrMode.auto),
+    caller: ApiKeyRecord | None = Depends(require_caller),
 ) -> BatchJobResponse:
     _ensure_ai_configured()
     try:
@@ -172,6 +285,7 @@ async def create_job_batch(
             status_code=422,
             detail=f"A batch can contain at most {settings.max_batch_files} PDFs.",
         )
+    _check_quota(caller, len(files))
     declared_total = sum(file.size or 0 for file in files)
     if declared_total > settings.max_batch_total_bytes:
         raise HTTPException(
@@ -186,7 +300,9 @@ async def create_job_batch(
     for file in files:
         file_name = Path(file.filename or "document.pdf").name
         try:
-            job = await _prepare_job(file, output_template, ocr_mode, contract.mode, batch_id)
+            job = await _prepare_job(
+                file, output_template, ocr_mode, contract.mode, batch_id, _owner_id(caller)
+            )
             prepared.append(job)
             total_saved += job.file_size
         except (UploadValidationError, PdfProcessingError) as exc:
@@ -211,6 +327,11 @@ async def create_job_batch(
                 storage.delete(pending_job.file_path)
             raise
 
+    if caller and accepted:
+        api_keys.record_documents(
+            caller.id, len(accepted), sum(job.page_count or 0 for job in prepared)
+        )
+
     return BatchJobResponse(
         batch_id=batch_id,
         jobs=accepted,
@@ -221,35 +342,118 @@ async def create_job_batch(
 
 
 @app.get("/api/jobs/batch", response_model=list[JobPublic])
-def get_job_batch(ids: str) -> list[JobPublic]:
+def get_job_batch(
+    ids: str, caller: ApiKeyRecord | None = Depends(require_caller)
+) -> list[JobPublic]:
     job_ids = [item.strip() for item in ids.split(",") if item.strip()]
     if not job_ids:
         raise HTTPException(status_code=422, detail="Provide at least one job ID.")
     if len(job_ids) > 50:
         raise HTTPException(status_code=422, detail="At most 50 job IDs can be checked at once.")
-    return [JobPublic.from_record(job) for job in database.get_many(job_ids)]
+    owner = _owner_id(caller)
+    jobs = database.get_many(job_ids)
+    return [
+        JobPublic.from_record(job)
+        for job in jobs
+        if owner is None or job.api_key_id == owner
+    ]
 
 
 @app.get("/api/batches/{batch_id}", response_model=list[JobPublic])
-def get_batch(batch_id: str) -> list[JobPublic]:
-    jobs = database.list_by_batch(batch_id)
+def get_batch(
+    batch_id: str, caller: ApiKeyRecord | None = Depends(require_caller)
+) -> list[JobPublic]:
+    jobs = database.list_by_batch(batch_id, _owner_id(caller))
     if not jobs:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found.")
     return [JobPublic.from_record(job) for job in jobs]
 
 
 @app.get("/api/jobs", response_model=list[JobPublic])
-def list_jobs(limit: int = 20) -> list[JobPublic]:
+def list_jobs(
+    limit: int = 20, caller: ApiKeyRecord | None = Depends(require_caller)
+) -> list[JobPublic]:
     safe_limit = min(max(limit, 1), 100)
-    return [JobPublic.from_record(job) for job in database.list_recent(safe_limit)]
+    return [
+        JobPublic.from_record(job)
+        for job in database.list_recent(safe_limit, _owner_id(caller))
+    ]
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobPublic)
-def get_job(job_id: str) -> JobPublic:
-    job = database.get(job_id)
+def get_job(job_id: str, caller: ApiKeyRecord | None = Depends(require_caller)) -> JobPublic:
+    job = database.get(job_id, _owner_id(caller))
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found.")
     return JobPublic.from_record(job)
+
+
+@app.get("/api/usage", response_model=UsageResponse)
+def get_usage(caller: ApiKeyRecord | None = Depends(require_caller)) -> UsageResponse:
+    """What the calling key has spent this month and what is left."""
+    if caller is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Send your key in the X-API-Key header to see its usage.",
+        )
+    used = api_keys.documents_used(caller.id)
+    return UsageResponse(
+        api_key=caller.to_public(used),
+        period=current_period(),
+        documents_this_month=used,
+        monthly_document_quota=caller.monthly_document_quota,
+        documents_remaining=max(0, caller.monthly_document_quota - used),
+        rate_limit_per_minute=caller.rate_limit_per_minute,
+    )
+
+
+@app.post(
+    "/api/admin/keys",
+    response_model=ApiKeyCreated,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
+def create_api_key(payload: ApiKeyCreateRequest) -> ApiKeyCreated:
+    """Issue a key. The raw value is returned once and never stored in clear text."""
+    try:
+        record, raw_key = api_keys.create(
+            name=payload.name,
+            rate_limit_per_minute=payload.rate_limit_per_minute
+            or settings.default_rate_limit_per_minute,
+            monthly_document_quota=payload.monthly_document_quota
+            or settings.default_monthly_document_quota,
+        )
+    except ApiKeyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ApiKeyCreated(key=raw_key, api_key=record.to_public())
+
+
+@app.get(
+    "/api/admin/keys",
+    response_model=list[ApiKeyPublic],
+    dependencies=[Depends(require_admin)],
+)
+def list_api_keys() -> list[ApiKeyPublic]:
+    return [
+        record.to_public(api_keys.documents_used(record.id)) for record in api_keys.list_all()
+    ]
+
+
+@app.delete(
+    "/api/admin/keys/{key_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    dependencies=[Depends(require_admin)],
+)
+def revoke_api_key(key_id: str) -> Response:
+    if api_keys.get(key_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found.")
+    if not api_keys.revoke(key_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="This key is already revoked."
+        )
+    rate_limiter.reset(key_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.delete(
@@ -257,8 +461,8 @@ def get_job(job_id: str) -> JobPublic:
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
 )
-def delete_job(job_id: str) -> Response:
-    job = database.get(job_id)
+def delete_job(job_id: str, caller: ApiKeyRecord | None = Depends(require_caller)) -> Response:
+    job = database.get(job_id, _owner_id(caller))
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found.")
     if job.status == JobStatus.processing:

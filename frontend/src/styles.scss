@@ -312,3 +312,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .schema-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--quiet); font-size: 11.5px; font-weight: 600; }
 .schema-checks .ready { color: var(--teal); }
 .schema-ready { color: var(--teal); font-size: 12px; font-weight: 700; }
+
+.topbar-right { display: flex; align-items: center; gap: 14px; }
+.key-chip { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-soft); font-size: 11px; }
+.key-gate h2 { font-size: 17px; }
+.key-gate p { margin-top: 6px; max-width: 640px; color: var(--muted); font-size: 13px; }
+.key-gate code { padding: 1px 4px; border-radius: 4px; background: var(--surface-soft); font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
+.key-form { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; }
+.key-form .field-name { flex: 1 1 280px; font-family: ui-monospace, Consolas, monospace; }

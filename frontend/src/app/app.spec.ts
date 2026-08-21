@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { App, MAX_FILE_BYTES, buildSchemaFromFields, validateJsonSchema, validatePdfFile } from './app';
+import { API_KEY_STORAGE, apiKeyInterceptor, readStoredApiKey, storeApiKey } from './api-key';
 
 const VALID_SCHEMA = JSON.stringify({
   type: 'object',
@@ -72,6 +73,39 @@ describe('Simple field builder', () => {
       type: 'object',
       properties: { total: { type: 'number' } },
     });
+  });
+});
+
+describe('API key handling', () => {
+  afterEach(() => localStorage.removeItem(API_KEY_STORAGE));
+
+  it('stores and clears the key in local storage', () => {
+    storeApiKey('  ps_live_abc123  ');
+    expect(readStoredApiKey()).toBe('ps_live_abc123');
+    storeApiKey('');
+    expect(readStoredApiKey()).toBe('');
+  });
+
+  it('attaches the key only to api requests', () => {
+    storeApiKey('ps_live_abc123');
+    const seen: (string | null)[] = [];
+    const next = (req: any) => {
+      seen.push(req.headers.get('X-API-Key'));
+      return req;
+    };
+
+    apiKeyInterceptor({ url: '/api/jobs', headers: { get: () => null }, clone: (o: any) => ({ headers: { get: () => o.setHeaders['X-API-Key'] } }) } as any, next as any);
+    apiKeyInterceptor({ url: 'https://elsewhere.test/data', headers: { get: () => null }, clone: () => ({}) } as any, next as any);
+
+    expect(seen[0]).toBe('ps_live_abc123');
+    expect(seen[1]).toBeNull();
+  });
+
+  it('sends no header when no key is stored', () => {
+    storeApiKey('');
+    let cloned = false;
+    apiKeyInterceptor({ url: '/api/jobs', clone: () => ((cloned = true), {}) } as any, ((r: any) => r) as any);
+    expect(cloned).toBe(false);
   });
 });
 
@@ -504,6 +538,47 @@ describe('App states', () => {
     expect(app.cellValue(job, 'trainName')).toBe('UDYAN');
     expect(app.cellValue(job, 'trainNumber')).toBe('—');
     expect(app.cellValue({ id: 'j3', status: 'processing', progress: 20 }, 'trainName')).toBe('');
+  });
+
+  it('asks for a key when the service runs in key mode', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    localStorage.removeItem(API_KEY_STORAGE);
+    app.apiKey.set('');
+    fixture.detectChanges();
+    http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, require_api_key: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'm', vision_model: 'm', ocr_model: 'm' });
+    http.expectOne('/api/jobs?limit=20').flush([]);
+    fixture.detectChanges();
+
+    expect(app.needsApiKey()).toBe(true);
+    expect(fixture.nativeElement.querySelector('.key-gate')).toBeTruthy();
+
+    app.apiKeyDraft.set('ps_live_test123456');
+    app.saveApiKey();
+    expect(app.apiKey()).toBe('ps_live_test123456');
+    expect(app.maskedApiKey()).toBe('ps_live_test12…');
+    http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, require_api_key: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'm', vision_model: 'm', ocr_model: 'm' });
+    http.expectOne('/api/jobs?limit=20').flush([]);
+    fixture.detectChanges();
+
+    expect(app.needsApiKey()).toBe(false);
+    expect(fixture.nativeElement.querySelector('.key-gate')).toBeNull();
+    app.clearApiKey();
+    localStorage.removeItem(API_KEY_STORAGE);
+  });
+
+  it('re-opens the key gate when the server rejects the stored key', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    app.health.set({ status: 'ok', ai_configured: true, require_api_key: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'm', vision_model: 'm', ocr_model: 'm' });
+    app.apiKey.set('ps_live_stale');
+    expect(app.needsApiKey()).toBe(false);
+
+    app.loadRecentJobs();
+    http.expectOne('/api/jobs?limit=20').flush({ detail: 'revoked' }, { status: 401, statusText: 'Unauthorized' });
+
+    expect(app.needsApiKey()).toBe(true);
+    app.clearApiKey();
   });
 
   it('renders a specific rejection near the submit action', () => {

@@ -3,8 +3,11 @@
     <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 2.75h7l4 4v14.5H7zM14 3v4h4M10 12h5M10 15h5" /></svg></span>
     <strong>Paper<span>Signal</span></strong>
   </div>
-  <div class="api-state" [class.offline]="healthError() || health()?.status !== 'ok'">
-    <span class="state-dot"></span>@if (healthLoading()) { Checking } @else if (healthError()) { Offline } @else { Connected }
+  <div class="topbar-right">
+    @if (apiKey()) { <span class="key-chip" title="API key used for every request"><span class="mono">{{ maskedApiKey() }}</span><button type="button" class="link" (click)="clearApiKey()">Change</button></span> }
+    <div class="api-state" [class.offline]="healthError() || health()?.status !== 'ok'">
+      <span class="state-dot"></span>@if (healthLoading()) { Checking } @else if (healthError()) { Offline } @else { Connected }
+    </div>
   </div>
 </header>
 
@@ -14,6 +17,18 @@
   }
   @if (healthError()) {
     <aside class="notice error" role="alert"><div><strong>Backend is not responding</strong><p>Start the API on port 8000, then reconnect.</p></div><button type="button" class="link" (click)="loadHealth()">Retry</button></aside>
+  }
+
+  @if (needsApiKey()) {
+    <section class="card key-gate" aria-labelledby="key-title">
+      <h2 id="key-title">API key required</h2>
+      <p>This service runs in key mode. Paste the key you were issued — it is stored in this browser only and sent as the <code>X-API-Key</code> header.</p>
+      <form class="key-form" (ngSubmit)="saveApiKey()">
+        <label for="api-key" class="sr-only">API key</label>
+        <input id="api-key" type="password" class="field-name" autocomplete="off" spellcheck="false" placeholder="ps_live_..." [ngModel]="apiKeyDraft()" [ngModelOptions]="{ standalone: true }" (ngModelChange)="apiKeyDraft.set($event)" />
+        <button type="submit" class="primary-action" [disabled]="!apiKeyDraft().trim()">Use this key</button>
+      </form>
+    </section>
   }
 
   @if (setupOpen()) {

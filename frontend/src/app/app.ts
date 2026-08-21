@@ -3,6 +3,8 @@ import { HttpClient, HttpEventType, HttpRequest } from '@angular/common/http';
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
+import { readStoredApiKey, storeApiKey } from './api-key';
+
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 export type OcrMode = 'auto' | 'always' | 'never';
 export type ResultTab = 'data' | 'evidence' | 'raw';
@@ -18,6 +20,7 @@ export interface HealthResponse {
   ocr_model: string;
   max_batch_files?: number;
   max_batch_total_mb?: number;
+  require_api_key?: boolean;
 }
 
 export interface BatchRejection {
@@ -227,6 +230,9 @@ export class App implements OnInit, OnDestroy {
   readonly expandedJobId = signal<string | null>(null);
   readonly copiedJobId = signal<string | null>(null);
   readonly fieldTypes = FIELD_TYPES;
+  readonly apiKey = signal(readStoredApiKey());
+  readonly apiKeyDraft = signal('');
+  readonly unauthorized = signal(false);
 
   outputTemplate = '';
   schemaError = '';
@@ -246,6 +252,33 @@ export class App implements OnInit, OnDestroy {
       properties: !!parsed && !!parsed['properties'] && typeof parsed['properties'] === 'object' && !Array.isArray(parsed['properties']) && Object.keys(parsed['properties'] as object).length > 0,
       supported: !!this.outputTemplate.trim() && error === null,
     };
+  }
+
+  needsApiKey(): boolean {
+    return (!!this.health()?.require_api_key && !this.apiKey()) || this.unauthorized();
+  }
+
+  saveApiKey(): void {
+    const key = this.apiKeyDraft().trim();
+    if (!key) return;
+    storeApiKey(key);
+    this.apiKey.set(key);
+    this.apiKeyDraft.set('');
+    this.unauthorized.set(false);
+    this.loadHealth();
+    this.loadRecentJobs();
+  }
+
+  clearApiKey(): void {
+    storeApiKey('');
+    this.apiKey.set('');
+    this.recentJobs.set([]);
+    this.unauthorized.set(false);
+  }
+
+  maskedApiKey(): string {
+    const key = this.apiKey();
+    return key ? `${key.slice(0, 14)}…` : '';
   }
 
   canSubmit(): boolean {
@@ -340,7 +373,8 @@ export class App implements OnInit, OnDestroy {
         this.recentJobs.set(jobs);
         this.recentLoading.set(false);
       },
-      error: () => {
+      error: (error) => {
+        if (error?.status === 401) this.unauthorized.set(true);
         this.recentError.set(true);
         this.recentLoading.set(false);
       },
@@ -792,6 +826,10 @@ export class App implements OnInit, OnDestroy {
   }
 
   private apiError(error: any, fallback: string): string {
+    if (error?.status === 401) {
+      this.unauthorized.set(true);
+      return 'This API key was rejected. Enter a valid key to continue.';
+    }
     const detail = error?.error?.detail ?? error?.error?.message;
     if (Array.isArray(detail)) return detail.map((item) => item?.msg ?? String(item)).join(' ');
     return typeof detail === 'string' && detail.trim() ? detail : fallback;

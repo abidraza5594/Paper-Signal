@@ -20,9 +20,10 @@ Upload a batch of PDFs, provide one required JSON Schema, and receive contract-s
 - Chunked map/reduce extraction for long documents
 - Required JSON Schema contracts with exact keys, nested shape, nullable missing values, and no extra fields
 - Batch identity persisted per job, so reopening any file restores the whole batch view
+- API-key service mode: hashed keys, per-client job isolation, per-key rate limits, monthly document quotas, usage reporting, and admin endpoints plus a `manage_keys.py` CLI
 - Concurrent batch processing with backoff-and-retry on Mistral rate limits
 - Per-job audit metadata: Python/Vision/OCR page split, models, schema mode, duration, failure code and failure stage
-- SQLite job persistence and background processing for local testing
+- SQLite persistence for jobs, API keys, and monthly usage
 - Prompt-injection boundary: PDF content is treated as untrusted data
 - Local file deletion endpoint and PII-safe application logging
 
@@ -73,6 +74,72 @@ cd ..\frontend
 npm test -- --watch=false
 npm run build
 ```
+
+## Using it as an API service
+
+The service ships in open mode so the local console works without a key. To let other
+people call it, turn on key mode in `backend/.env`:
+
+```
+REQUIRE_API_KEY=true
+ADMIN_TOKEN=<a long random value>
+```
+
+With key mode on, every `/api` call needs a key. `GET /api/health` reports
+`require_api_key` so a client can tell which mode the service is in.
+
+### Issuing keys
+
+From the machine running the service:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe manage_keys.py create "Acme Corp" --rate-limit 120 --quota 5000
+.\.venv\Scripts\python.exe manage_keys.py list
+.\.venv\Scripts\python.exe manage_keys.py revoke <key_id>
+```
+
+Or over HTTP, using `ADMIN_TOKEN`:
+
+```bash
+curl -X POST http://localhost:8000/api/admin/keys   -H "X-Admin-Token: $ADMIN_TOKEN" -H "Content-Type: application/json"   -d '{"name":"Acme Corp","rate_limit_per_minute":120,"monthly_document_quota":5000}'
+```
+
+The raw key is returned once and never stored in clear text: only a SHA-256 hash and a
+short display prefix are kept, so a stolen database cannot be used to call the API.
+
+### Calling the API
+
+Send the key as `X-API-Key`, or as `Authorization: Bearer <key>`.
+
+```bash
+# 1. submit a batch, one JSON Schema for every file
+curl -X POST http://localhost:8000/api/jobs/batch   -H "X-API-Key: ps_live_..."   -F "files=@invoice-a.pdf" -F "files=@invoice-b.pdf"   -F 'output_template={"type":"object","properties":{"total":{"type":"number"}}}'   -F "ocr_mode=auto"
+# -> 202 {"batch_id":"...","jobs":[{"id":"...","status":"queued",...}],"rejected":[],...}
+
+# 2. poll the whole batch
+curl -H "X-API-Key: ps_live_..." http://localhost:8000/api/batches/<batch_id>
+
+# 3. or poll one job
+curl -H "X-API-Key: ps_live_..." http://localhost:8000/api/jobs/<job_id>
+
+# 4. check what the key has spent this month
+curl -H "X-API-Key: ps_live_..." http://localhost:8000/api/usage
+```
+
+Interactive docs live at `/api/docs`.
+
+### What a key controls
+
+| Behaviour | Detail |
+|---|---|
+| Isolation | A key only ever sees, polls, and deletes its own jobs. Another client's job id returns 404. |
+| Rate limit | Per key, per minute. Exceeding it returns 429 with a `Retry-After` header. |
+| Monthly quota | Counted in accepted documents per calendar month. Exceeding it returns 402. Rejected files are not billed. |
+| Revocation | Revoked keys return 401 immediately. |
+
+Rate limiting is in-process, so each API replica enforces its own share; move it to Redis
+before running several replicas behind a load balancer.
 
 ## Local vs production
 

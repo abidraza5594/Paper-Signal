@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     local_worker_count: int = Field(default=10, ge=1, le=32)
     ai_max_retries: int = Field(default=3, ge=0, le=8)
     ai_retry_base_seconds: float = Field(default=1.0, ge=0.0, le=30.0)
+
+    # API-as-a-service controls
+    require_api_key: bool = False
+    admin_token: SecretStr | None = None
+    default_rate_limit_per_minute: int = Field(default=60, ge=1, le=10_000)
+    default_monthly_document_quota: int = Field(default=1_000, ge=1, le=10_000_000)
     cors_origins: list[str] | str = ["http://localhost:4200"]
 
     mistral_api_key: SecretStr | None = None
@@ -54,6 +60,15 @@ class Settings(BaseSettings):
     @property
     def max_batch_total_bytes(self) -> int:
         return self.max_batch_total_mb * 1024 * 1024
+
+    @property
+    def admin_token_value(self) -> str | None:
+        token = self.admin_token.get_secret_value().strip() if self.admin_token else ""
+        return token or None
+
+    @property
+    def api_keys_database_path(self) -> Path:
+        return self.data_dir / "api_keys.sqlite3"
 
     @property
     def upload_dir(self) -> Path:

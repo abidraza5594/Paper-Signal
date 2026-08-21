@@ -74,6 +74,7 @@ class ExtractionResult(PartialExtraction):
 class JobRecord(BaseModel):
     id: str
     batch_id: str | None = None
+    api_key_id: str | None = None
     file_name: str
     file_path: str
     file_size: int
@@ -149,9 +150,42 @@ class BatchJobResponse(BaseModel):
     rejected_count: int = Field(ge=0)
 
 
+class ApiKeyPublic(BaseModel):
+    id: str
+    name: str
+    key_prefix: str
+    rate_limit_per_minute: int
+    monthly_document_quota: int
+    documents_this_month: int = 0
+    created_at: str
+    last_used_at: str | None = None
+    revoked_at: str | None = None
+
+
+class ApiKeyCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    rate_limit_per_minute: int | None = Field(default=None, ge=1, le=10_000)
+    monthly_document_quota: int | None = Field(default=None, ge=1, le=10_000_000)
+
+
+class ApiKeyCreated(BaseModel):
+    key: str = Field(description="Shown once. Store it now; it cannot be retrieved again.")
+    api_key: ApiKeyPublic
+
+
+class UsageResponse(BaseModel):
+    api_key: ApiKeyPublic
+    period: str
+    documents_this_month: int
+    monthly_document_quota: int
+    documents_remaining: int
+    rate_limit_per_minute: int
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     ai_configured: bool
+    require_api_key: bool = False
     max_upload_mb: int
     max_pdf_pages: int
     max_batch_files: int

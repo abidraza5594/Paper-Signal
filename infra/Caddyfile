@@ -1,0 +1,29 @@
+# Automatic HTTPS via Let's Encrypt. Replace the hostname with your own.
+# Install:  sudo cp infra/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+#
+# No domain? Get a free one from https://www.duckdns.org and use
+# yourname.duckdns.org here. Caddy issues a real certificate for it.
+
+papersignal.duckdns.org {
+	encode gzip
+
+	# Angular build output, uploaded from your machine
+	root * /var/www/papersignal
+	file_server
+
+	# API and docs go to the backend
+	handle /api/* {
+		reverse_proxy localhost:8000
+	}
+
+	# Angular is a single-page app: unknown paths return index.html
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+
+	# 200 MB uploads need a raised body limit
+	request_body {
+		max_size 210MB
+	}
+}

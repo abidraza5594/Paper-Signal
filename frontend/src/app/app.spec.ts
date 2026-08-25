@@ -581,6 +581,45 @@ describe('App states', () => {
     app.clearApiKey();
   });
 
+  it('brings the last batch back after a page reload', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    fixture.detectChanges();
+    http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'm', vision_model: 'm', ocr_model: 'm' });
+
+    // a fresh page load only knows what the registry returns
+    http.expectOne('/api/jobs?limit=20').flush([
+      { id: 'job-b', batch_id: 'batch-1', status: 'completed', progress: 100, file_name: 'b.pdf', output_template: VALID_SCHEMA, result: { data: { total: '20' } } },
+      { id: 'job-a', batch_id: 'batch-1', status: 'completed', progress: 100, file_name: 'a.pdf', result: { data: { total: '10' } } },
+    ]);
+    http.expectOne('/api/batches/batch-1').flush([
+      { id: 'job-a', batch_id: 'batch-1', status: 'completed', progress: 100, file_name: 'a.pdf', result: { data: { total: '10' } } },
+      { id: 'job-b', batch_id: 'batch-1', status: 'completed', progress: 100, file_name: 'b.pdf', result: { data: { total: '20' } } },
+    ]);
+    fixture.detectChanges();
+
+    // both files are listed again, and the schema that produced them is back in the editor
+    expect(app.tableJobs().map((job) => job.id)).toEqual(['job-a', 'job-b']);
+    expect(app.setupOpen()).toBe(false);
+    expect(app.outputTemplate).toBe(VALID_SCHEMA);
+    expect(fixture.nativeElement.querySelectorAll('.result-item').length).toBe(2);
+    // rows stay collapsed until the user opens one
+    expect(fixture.nativeElement.querySelector('.json-view')).toBeNull();
+  });
+
+  it('leaves the empty state alone when there is no history to restore', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    fixture.detectChanges();
+    http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'm', vision_model: 'm', ocr_model: 'm' });
+    http.expectOne('/api/jobs?limit=20').flush([]);
+    fixture.detectChanges();
+
+    expect(app.tableJobs()).toEqual([]);
+    expect(app.setupOpen()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('No results yet');
+  });
+
   it('renders a specific rejection near the submit action', () => {
     const fixture = TestBed.createComponent(App);
     fixture.componentInstance.submitError = 'PDF rejected: 41 pages detected. Maximum allowed is 40 pages.';

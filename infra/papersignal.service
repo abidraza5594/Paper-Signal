@@ -1,0 +1,25 @@
+# PaperSignal backend as a systemd service.
+# Install:  sudo cp infra/papersignal.service /etc/systemd/system/
+#           sudo systemctl daemon-reload && sudo systemctl enable --now papersignal
+# Logs:     sudo journalctl -u papersignal -f
+
+[Unit]
+Description=PaperSignal PDF extraction API
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Paper-Signal/backend
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/home/ubuntu/Paper-Signal/backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+# The API only listens on loopback; Caddy terminates TLS and proxies to it.
+# Keep the box alive if a PDF blows up memory on a 1 GB instance.
+MemoryMax=768M
+OOMPolicy=continue
+
+[Install]
+WantedBy=multi-user.target

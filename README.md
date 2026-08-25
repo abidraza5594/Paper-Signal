@@ -142,6 +142,12 @@ every status code, and exactly what an API key controls — is in [API.md](API.m
 Rate limiting is in-process, so each API replica enforces its own share; move it to Redis
 before running several replicas behind a load balancer.
 
+## Deploying
+
+[DEPLOYMENT.md](DEPLOYMENT.md) walks through a single AWS free-tier EC2 instance with
+automatic HTTPS: what the free tier covers, the 1 GB RAM constraints, the setup script in
+`infra/`, and how to tear it down without leaving billable resources behind.
+
 ## Local vs production
 
 The checked-in runtime uses local disk, SQLite, and a bounded in-process worker. It is appropriate for local testing and a single API instance. Do not run multiple API replicas against the same SQLite file or local upload directory.

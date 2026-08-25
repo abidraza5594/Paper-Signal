@@ -205,6 +205,7 @@ export class App implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
   private pollTimer?: ReturnType<typeof setInterval>;
   private pollingJobIds = new Set<string>();
+  private restoredOnLoad = false;
 
   readonly health = signal<HealthResponse | null>(null);
   readonly healthLoading = signal(true);
@@ -372,6 +373,10 @@ export class App implements OnInit, OnDestroy {
       next: (jobs) => {
         this.recentJobs.set(jobs);
         this.recentLoading.set(false);
+        if (!this.restoredOnLoad) {
+          this.restoredOnLoad = true;
+          this.restoreLastResults(jobs);
+        }
       },
       error: (error) => {
         if (error?.status === 401) this.unauthorized.set(true);
@@ -379,6 +384,27 @@ export class App implements OnInit, OnDestroy {
         this.recentLoading.set(false);
       },
     });
+  }
+
+  /** After a page reload the results are gone from memory, so bring the last batch back. */
+  private restoreLastResults(jobs: PdfJob[]): void {
+    const latest = jobs[0];
+    if (!latest || this.batchJobs().length || this.activeJob()) return;
+
+    this.activeJob.set(latest);
+    this.setupOpen.set(false);
+    if (latest.output_template && !this.outputTemplate.trim()) {
+      this.outputTemplate = latest.output_template;
+      this.inputMode.set('advanced');
+      this.schemaError = validateJsonSchema(this.outputTemplate) ?? '';
+    }
+
+    if (latest.batch_id) {
+      this.loadBatch(latest.batch_id, latest);
+    } else {
+      this.batchJobs.set([latest]);
+      this.pollUnfinished([latest]);
+    }
   }
 
   onFileInput(event: Event): void {

@@ -144,6 +144,10 @@ before running several replicas behind a load balancer.
 
 ## Deploying
 
+[RUNBOOK.md](RUNBOOK.md) (Hinglish) documents the live AWS deployment: which services were
+created and why, every command that ran, the monthly cost, how to delete uploaded PDFs, how
+clients integrate with an API key, and the full teardown checklist.
+
 [DEPLOYMENT.md](DEPLOYMENT.md) walks through a single AWS free-tier EC2 instance with
 automatic HTTPS: what the free tier covers, the 1 GB RAM constraints, the setup script in
 `infra/`, and how to tear it down without leaving billable resources behind.

@@ -1,0 +1,60 @@
+# Render Blueprint: one backend web service + one static frontend.
+#
+# Deploy:  render.com -> New -> Blueprint -> pick this repo.
+# Then set the secret values marked sync: false in the dashboard.
+#
+# Free plan notes that matter here:
+#   - 512 MB RAM, so LOCAL_WORKER_COUNT is 1. PDF rendering is memory-hungry.
+#   - The filesystem is ephemeral: jobs, API keys, and uploaded PDFs are lost on
+#     every redeploy or restart. Fine for a demo, not for real use. A paid plan
+#     with a persistent disk, or Postgres, fixes this.
+#   - The service sleeps after ~15 minutes idle; the next request takes ~30s.
+
+services:
+  - type: web
+    name: papersignal-api
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # Set in the dashboard, never in this file.
+      - key: MISTRAL_API_KEYS
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: REQUIRE_API_KEY
+        value: "true"
+      # 512 MB cannot run parallel page rendering.
+      - key: LOCAL_WORKER_COUNT
+        value: "1"
+      - key: MAX_BATCH_FILES
+        value: "5"
+      - key: MAX_UPLOAD_MB
+        value: "25"
+      - key: MAX_PDF_PAGES
+        value: "20"
+      # Filled in after the static site gets its URL.
+      - key: CORS_ORIGINS
+        sync: false
+
+  - type: web
+    name: papersignal
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist/frontend/browser
+    routes:
+      # Send API calls to the backend so the browser sees one origin.
+      - type: rewrite
+        source: /api/*
+        destination: https://papersignal-api.onrender.com/api/*
+      # Angular is a single-page app: everything else serves index.html.
+      - type: rewrite
+        source: /*
+        destination: /index.html

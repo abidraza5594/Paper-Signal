@@ -1,14 +1,49 @@
-# Deploying PaperSignal on AWS Free Tier
+# Deploying PaperSignal
 
-A single EC2 instance with HTTPS, suitable for a demo or a small pilot. No code changes
-are needed — the app runs on SQLite and local disk, which is fine for one server.
+Two options: **Render** for a link in about fifteen minutes with no payment method, or a
+single **AWS EC2** instance for something you control. Neither needs code changes — the app
+runs on SQLite and local disk, which is fine for one server.
 
-Read [Section 8](#8-shutting-it-down) before you start: this is a temporary setup and you
-must terminate it deliberately, or it will start costing money.
+Sections 1 onwards cover AWS. If you go that route, read [Section 8](#8-shutting-it-down)
+first: it is a temporary setup and you must terminate it deliberately, or it will start
+costing money.
 
 ---
 
-## 1. What the free tier gives you, and what it costs you
+## 0. Quicker alternative: Render (no card, ~15 minutes)
+
+If you just need a working link — for a demo, or while an AWS account is still being
+verified — [render.com](https://render.com) deploys straight from this repo with HTTPS
+included and no payment method.
+
+1. Sign in to Render with GitHub.
+2. **New → Blueprint**, pick the `Paper-Signal` repo. It reads [render.yaml](render.yaml)
+   and creates two services: `papersignal-api` (backend) and `papersignal` (frontend).
+3. Set the two secrets on `papersignal-api` → Environment:
+   - `MISTRAL_API_KEYS` — your Mistral key
+   - `ADMIN_TOKEN` — any long random value
+4. Wait for both to build. The static site gets a URL like `https://papersignal.onrender.com`.
+5. Put that URL into `CORS_ORIGINS` on `papersignal-api`, then redeploy the backend.
+6. Issue a key from the backend's **Shell** tab:
+   ```bash
+   python manage_keys.py create "Demo" --rate-limit 30 --quota 100
+   ```
+7. Open the site, paste the key, upload a PDF.
+
+### What the free plan costs you in capability
+
+| Limit | Effect | Why it is set that way |
+|---|---|---|
+| 512 MB RAM | `LOCAL_WORKER_COUNT=1`, 25 MB uploads, 20 pages, 5 files per batch | PDF rendering is memory-hungry; the defaults would be killed |
+| Ephemeral disk | **Jobs, API keys, and uploaded PDFs are wiped on every redeploy or restart** | Free instances have no persistent volume |
+| Sleeps after ~15 min idle | First request takes ~30 seconds | Free instances spin down |
+
+The wiped-on-restart part is the one to remember: issue the demo key *after* the final deploy,
+or it will disappear. A paid instance with a disk, or Postgres, removes this.
+
+---
+
+## 1. AWS free tier: what it gives you, and what it costs you
 
 | Resource | Free allowance | Notes |
 |---|---|---|

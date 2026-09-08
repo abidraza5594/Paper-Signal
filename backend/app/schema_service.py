@@ -67,6 +67,13 @@ def _normalize_schema(schema: dict[str, Any], depth: int) -> dict[str, Any]:
 
     types = _nullable_type(schema.get("type"))
     primary_type = next((item for item in types if item != "null"), "null")
+    if primary_type == "object":
+        # An object must stay a real object. A nullable object gives the model a
+        # legal way to answer `null` for the whole branch, and it takes it: on a
+        # 41-page brochure every field came back null even though the text was
+        # right there. `exact_shape` never returns null for an object anyway, so
+        # allowing it here only ever described a result the service cannot emit.
+        types = ["object"]
     normalized: dict[str, Any] = {"type": types}
     for key in ("description", "enum", "format", "minimum", "maximum", "minLength", "maxLength"):
         if key in schema:
@@ -103,7 +110,7 @@ def _schema_from_example(value: Any, depth: int) -> dict[str, Any]:
             raise OutputSchemaError("Example JSON must contain at least one field.")
         properties = {str(key): _schema_from_example(item, depth + 1) for key, item in value.items()}
         return {
-            "type": ["object", "null"],
+            "type": "object",
             "properties": properties,
             "required": list(properties.keys()),
             "additionalProperties": False,

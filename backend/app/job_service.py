@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from threading import BoundedSemaphore
 
@@ -22,9 +23,11 @@ class JobQueueFullError(RuntimeError):
 
 
 class JobRunner:
-    def __init__(self, settings: Settings, database: JobDatabase):
+    def __init__(self, settings: Settings, database: JobDatabase, storage=None):
         self.settings = settings
         self.database = database
+        # The PDF may live in S3, so never assume file_path is a local path.
+        self.storage = storage
         self.executor = ThreadPoolExecutor(
             max_workers=settings.local_worker_count,
             thread_name_prefix="pdf-worker",
@@ -55,10 +58,23 @@ class JobRunner:
         finally:
             self._capacity.release()
 
+    @contextmanager
+    def _pdf_file(self, reference: str):
+        """The PDF may be in object storage, so fetch it once per job."""
+        if self.storage is not None:
+            with self.storage.local_copy(reference) as path:
+                yield path
+        else:
+            yield Path(reference)
+
     def _process(self, job_id: str) -> None:
         job = self.database.get(job_id)
         if job is None:
             return
+        with self._pdf_file(job.file_path) as pdf_path:
+            self._extract(job_id, job, pdf_path)
+
+    def _extract(self, job_id: str, job, pdf_path: Path) -> None:
         started = time.perf_counter()
         failure_stage = "Starting"
         try:
@@ -66,7 +82,7 @@ class JobRunner:
             self.database.update(
                 job_id, status=JobStatus.processing, progress=5, stage="Reading PDF"
             )
-            extracted = self.pdf.extract(Path(job.file_path))
+            extracted = self.pdf.extract(pdf_path)
             self.database.update(
                 job_id, progress=15, stage="Checking page text", page_count=extracted.page_count
             )
@@ -102,7 +118,7 @@ class JobRunner:
                         )
                         try:
                             image = self.pdf.render_page_data_url(
-                                Path(job.file_path),
+                                pdf_path,
                                 page_number,
                                 dpi=self.settings.vision_render_dpi,
                             )
@@ -139,7 +155,7 @@ class JobRunner:
                     stage=f"Running OCR on {len(ocr_targets)} page(s)",
                     ocr_pages=len(ocr_targets),
                 )
-                ocr_text = ai.ocr_pages(Path(job.file_path), ocr_targets)
+                ocr_text = ai.ocr_pages(pdf_path, ocr_targets)
                 extracted = self.pdf.apply_ocr(extracted, ocr_text)
 
             chunks = self.pdf.to_chunks(extracted)

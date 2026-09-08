@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     ai_max_retries: int = Field(default=3, ge=0, le=8)
     ai_retry_base_seconds: float = Field(default=1.0, ge=0.0, le=30.0)
 
+    # Cloud storage and data. Empty means "use local disk / SQLite".
+    uploads_bucket: str = ""
+    jobs_table: str = ""
+    api_keys_table: str = ""
+    usage_table: str = ""
+
     # API-as-a-service controls
     require_api_key: bool = False
     admin_token: SecretStr | None = None

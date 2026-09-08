@@ -8,6 +8,9 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import FileResponse
 
 from .api_keys import (
     ApiKeyError,
@@ -35,16 +38,31 @@ from .models import (
 )
 from .pdf_service import PdfProcessingError, PdfTextService
 from .schema_service import OutputSchemaError, parse_json_schema_contract
-from .storage import LocalStorage, UploadValidationError
+from .storage import UploadValidationError, build_storage
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 settings = get_settings()
 settings.prepare_directories()
-database = JobDatabase(settings.database_path)
-storage = LocalStorage(settings.upload_dir, settings.max_upload_bytes)
-runner = JobRunner(settings, database)
-api_keys = ApiKeyStore(settings.api_keys_database_path)
+def _build_database():
+    """DynamoDB when a table is configured, SQLite otherwise."""
+    if settings.jobs_table:
+        from .dynamo import DynamoJobDatabase
+        return DynamoJobDatabase(settings.jobs_table)
+    return JobDatabase(settings.database_path)
+
+
+def _build_api_keys():
+    if settings.api_keys_table:
+        from .dynamo import DynamoApiKeyStore
+        return DynamoApiKeyStore(settings.api_keys_table, settings.usage_table)
+    return ApiKeyStore(settings.api_keys_database_path)
+
+
+database = _build_database()
+storage = build_storage(settings)
+runner = JobRunner(settings, database, storage)
+api_keys = _build_api_keys()
 rate_limiter = RateLimiter()
 
 
@@ -196,7 +214,10 @@ async def _prepare_job(
 ) -> JobRecord:
     path, size, original_name = await storage.save_pdf(file)
     try:
-        page_count = PdfTextService.inspect_page_count(path)
+        # `path` is an opaque reference: an S3 key in the cloud, a filename locally.
+        # Ask the storage for readable bytes instead of assuming a local file.
+        with storage.local_copy(path) as readable:
+            page_count = PdfTextService.inspect_page_count(readable)
         if page_count > settings.max_pdf_pages:
             raise PdfProcessingError(
                 f"PDF rejected: {page_count} pages detected. Maximum allowed is "
@@ -207,7 +228,7 @@ async def _prepare_job(
             batch_id=batch_id,
             api_key_id=api_key_id,
             file_name=original_name,
-            file_path=str(path),
+            file_path=path,
             file_size=size,
             instruction="Extract only the fields defined by the supplied JSON Schema.",
             output_template=output_template.strip(),
@@ -416,3 +437,48 @@ def delete_extraction(
         storage.delete(job.file_path)
         database.delete(job.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.api_route(
+    "/api/{rest:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    include_in_schema=False,
+)
+def unknown_api_route(rest: str):
+    """Any /api path that no route above matched.
+
+    Declared after every real route so it only catches leftovers. Without it the
+    static mount below would answer, giving 405 or an HTML page for a wrong URL.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Unknown API endpoint: /api/{rest}. See /api/docs for the current endpoints.",
+    )
+
+
+# --- the web console, served by the same container -------------------------
+#
+# One origin for the site and the API means no CORS between them, and no second
+# service to deploy. Mounted last so every /api route is matched first.
+
+class SpaFiles(StaticFiles):
+    """Static files, but unknown paths fall back to index.html.
+
+    The console is a single-page app: /documentation is a client-side route with
+    no file behind it, so a plain static server would 404 on a page refresh.
+    """
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            # An unknown /api path is a client error, not a page. Returning HTML
+            # there would hide a wrong URL behind a 200.
+            if exc.status_code == 404 and not scope["path"].startswith("/api"):
+                return FileResponse(Path(self.directory) / "index.html")
+            raise
+
+
+_web_root = Path(__file__).resolve().parent.parent / "web"
+if _web_root.is_dir():
+    app.mount("/", SpaFiles(directory=str(_web_root), html=True), name="web")

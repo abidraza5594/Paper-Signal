@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "invoiceNumber": {"type": "string", "description": "Invoice identifier printed on the document"},
+    "invoiceDate": {"type": "string", "description": "Invoice date, YYYY-MM-DD when available"},
+    "totalAmount": {"type": "number"},
+    "currency": {"type": "string"}
+  }
+}

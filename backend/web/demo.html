@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PaperSignal API demo</title>
+<style>
+  :root {
+    --ink: #17202f; --muted: #5b6577; --quiet: #838c9c;
+    --line: #dde2ec; --line-strong: #c4ccdb;
+    --blue: #275dff; --blue-dark: #1a49da;
+    --green: #0a7a58; --green-bg: #e7f6f0;
+    --red: #b42334; --red-bg: #fdecee;
+    --amber: #9a5c0b; --amber-bg: #fff4e2;
+    --surface: #fff; --soft: #f7f9fc;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px;
+    font: 16px/1.55 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink); background: #f5f6f8;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; display: grid; gap: 16px; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: -.01em; }
+  .sub { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .card {
+    padding: 20px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--surface); box-shadow: 0 1px 2px rgba(23,32,47,.05);
+  }
+  label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+  input[type=text], input[type=password], textarea {
+    width: 100%; padding: 10px 12px; font: inherit;
+    border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface);
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--blue); }
+  textarea { font-family: ui-monospace, Consolas, monospace; font-size: 13px; resize: vertical; }
+  .row { display: grid; gap: 14px; }
+  @media (min-width: 720px) { .row.two { grid-template-columns: 1fr 1fr; } }
+  .drop {
+    padding: 22px; text-align: center; cursor: pointer;
+    border: 1.5px dashed var(--line-strong); border-radius: 10px; background: var(--soft);
+  }
+  .drop:hover, .drop.over { border-color: var(--blue); background: #f1f5ff; }
+  .drop input { display: none; }
+  .drop strong { display: block; font-size: 14px; }
+  .drop small { color: var(--muted); font-size: 12px; }
+  .files { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+  .files li {
+    display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--soft); font-size: 12px;
+  }
+  .files button { border: 0; background: none; cursor: pointer; color: var(--quiet); font-size: 15px; line-height: 1; }
+  button.go {
+    width: 100%; min-height: 46px; margin-top: 16px; border: 0; border-radius: 8px;
+    background: var(--blue); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  button.go:hover:not(:disabled) { background: var(--blue-dark); }
+  button.go:disabled { background: #c8cfdd; cursor: not-allowed; }
+  .hint { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+    border-radius: 999px; font-size: 11px; font-weight: 800; background: #eef1f6; color: var(--muted);
+  }
+  .pill.done { background: var(--green-bg); color: var(--green); }
+  .pill.failed { background: var(--red-bg); color: var(--red); }
+  .pill.run { background: #e9efff; color: var(--blue-dark); }
+  .pill.wait { background: var(--amber-bg); color: var(--amber); }
+  .result { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+  .result-head {
+    display: flex; align-items: center; gap: 10px; padding: 11px 14px; background: var(--soft);
+  }
+  .result-head .name { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  pre {
+    margin: 0; padding: 14px; overflow: auto; max-height: 320px;
+    font-family: ui-monospace, Consolas, monospace; font-size: 13px; line-height: 1.6;
+  }
+  .why { margin: 0; padding: 12px 14px; background: var(--red-bg); color: #7c2430; font-size: 13px; }
+  .note { padding: 11px 14px; border-left: 3px solid var(--amber); border-radius: 6px; background: var(--amber-bg); font-size: 13px; }
+  .note.bad { border-left-color: var(--red); background: var(--red-bg); color: #7c2430; }
+  .empty { padding: 34px 20px; text-align: center; color: var(--muted); font-size: 14px;
+           border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--soft); }
+  code { padding: 1px 5px; border-radius: 4px; background: var(--soft); font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  a { color: var(--blue); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div>
+    <h1>PaperSignal API demo</h1>
+    <p class="sub">A single HTML file that calls the API directly. Nothing else is installed. View source to see exactly which two requests it makes.</p>
+  </div>
+
+  <div class="card">
+    <div class="row two">
+      <div>
+        <label for="key">API key</label>
+        <input id="key" type="password" spellcheck="false" autocomplete="off">
+        <p class="hint">Sent as the <code>X-API-Key</code> header on every request.</p>
+      </div>
+      <div>
+        <label for="base">Service URL</label>
+        <input id="base" type="text" spellcheck="false" value="">
+        <p class="hint">Leave as-is when this page is served by the service itself.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>1. Choose PDFs</label>
+    <label class="drop" id="drop" for="picker">
+      <input id="picker" type="file" accept="application/pdf,.pdf" multiple>
+      <strong>Drop PDFs here or click to browse</strong>
+      <small id="limits">Loading service limits…</small>
+    </label>
+    <ul class="files" id="files"></ul>
+
+    <div style="margin-top:18px">
+      <label for="schema">2. Fields you want (JSON Schema)</label>
+      <textarea id="schema" rows="9" spellcheck="false">{
+  "type": "object",
+  "properties": {
+    "trainName": { "type": "string" },
+    "trainNumber": { "type": "number" }
+  }
+}</textarea>
+      <p class="hint">Every key you list here comes back in <code>result.data</code>. Anything the PDF does not contain comes back as <code>null</code>.</p>
+    </div>
+
+    <button class="go" id="go" disabled>Extract</button>
+    <div id="formError"></div>
+  </div>
+
+  <div class="card">
+    <label>Results</label>
+    <div id="out"><div class="empty">Choose one or more PDFs and press Extract.</div></div>
+  </div>
+
+</div>
+
+<script>
+// Two calls do the whole job:
+//   POST /api/v1/extractions            -> returns extraction_id, work is queued
+//   GET  /api/v1/extractions/{id}       -> poll until every document is finished
+const DEMO_KEY = 'ps_live_QsQdO9U1r3dflDxoyJmMt1sNUXIfdJES';
+
+const $ = id => document.getElementById(id);
+const keyEl = $('key'), baseEl = $('base'), schemaEl = $('schema');
+const dropEl = $('drop'), pickerEl = $('picker'), filesEl = $('files');
+const goEl = $('go'), outEl = $('out'), formErrorEl = $('formError'), limitsEl = $('limits');
+
+keyEl.value = DEMO_KEY;
+baseEl.value = location.origin.startsWith('http') ? location.origin : 'https://ydb2zmspyn.ap-south-1.awsapprunner.com';
+
+let chosen = [];
+
+const base = () => baseEl.value.trim().replace(/\/+$/, '');
+const headers = () => ({ 'X-API-Key': keyEl.value.trim() });
+const escape = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function note(target, message, bad) {
+  target.innerHTML = message ? `<p class="note${bad ? ' bad' : ''}" style="margin-top:12px">${escape(message)}</p>` : '';
+}
+
+function renderFiles() {
+  filesEl.innerHTML = chosen
+    .map((f, i) => `<li><span>${escape(f.name)}</span><button type="button" data-i="${i}" aria-label="Remove ${escape(f.name)}">&times;</button></li>`)
+    .join('');
+  goEl.disabled = chosen.length === 0;
+  goEl.textContent = chosen.length ? `Extract from ${chosen.length} PDF${chosen.length > 1 ? 's' : ''}` : 'Extract';
+}
+
+function addFiles(list) {
+  for (const file of list || []) {
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const duplicate = chosen.some(f => f.name === file.name && f.size === file.size);
+    if (isPdf && !duplicate) chosen.push(file);
+  }
+  renderFiles();
+}
+
+filesEl.addEventListener('click', e => {
+  const i = e.target.dataset?.i;
+  if (i !== undefined) { chosen.splice(Number(i), 1); renderFiles(); }
+});
+pickerEl.addEventListener('change', e => { addFiles(e.target.files); pickerEl.value = ''; });
+dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('over'); });
+dropEl.addEventListener('dragleave', () => dropEl.classList.remove('over'));
+dropEl.addEventListener('drop', e => { e.preventDefault(); dropEl.classList.remove('over'); addFiles(e.dataTransfer.files); });
+
+// Read the limits from the service rather than hard-coding them here.
+fetch(`${base()}/api/health`)
+  .then(r => r.json())
+  .then(h => {
+    limitsEl.textContent = `Up to ${h.max_batch_files} files · ${h.max_upload_mb} MB each · ${h.max_pdf_pages} pages each`;
+  })
+  .catch(() => { limitsEl.textContent = 'Could not reach the service.'; });
+
+const pill = job => {
+  if (job.status === 'completed') return '<span class="pill done">&#10003; Done</span>';
+  if (job.status === 'failed') return '<span class="pill failed">! Failed</span>';
+  if (job.status === 'queued') return '<span class="pill wait">Waiting</span>';
+  return `<span class="pill run">${job.progress || 0}%</span>`;
+};
+
+function render(jobs) {
+  outEl.innerHTML = jobs.map(job => {
+    let body;
+    if (job.status === 'completed') {
+      body = `<pre>${escape(JSON.stringify(job.result?.data ?? {}, null, 2))}</pre>`;
+    } else if (job.status === 'failed') {
+      // failure_code tells you whether to retry, fix the file, or call the operator.
+      body = `<p class="why"><strong>${escape(job.failure_code || 'FAILED')}</strong><br>${escape(job.error || '')}</p>`;
+    } else {
+      body = `<pre style="color:#5b6577">${escape(job.stage || 'Queued')}…</pre>`;
+    }
+    return `<div class="result">
+      <div class="result-head"><span class="name">${escape(job.file_name || 'document.pdf')}</span>${pill(job)}</div>
+      ${body}
+    </div>`;
+  }).join('');
+}
+
+async function poll(extractionId) {
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const res = await fetch(`${base()}/api/v1/extractions/${encodeURIComponent(extractionId)}`, { headers: headers() });
+    if (!res.ok) throw new Error(`Could not read results (HTTP ${res.status}).`);
+    const jobs = await res.json();
+    render(jobs);
+    if (jobs.every(j => j.status === 'completed' || j.status === 'failed')) return;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  throw new Error('Gave up waiting. The work may still finish; the extraction ID is still valid.');
+}
+
+goEl.addEventListener('click', async () => {
+  note(formErrorEl, '');
+  if (!keyEl.value.trim()) return note(formErrorEl, 'Enter an API key first.', true);
+  try { JSON.parse(schemaEl.value); }
+  catch { return note(formErrorEl, 'The JSON Schema is not valid JSON. Every key must be in double quotes.', true); }
+
+  goEl.disabled = true;
+  goEl.textContent = 'Uploading…';
+  outEl.innerHTML = '<div class="empty">Uploading…</div>';
+
+  try {
+    const form = new FormData();
+    chosen.forEach(file => form.append('files', file));   // repeat the field, one per PDF
+    form.append('output_template', schemaEl.value);
+    form.append('ocr_mode', 'auto');
+
+    const res = await fetch(`${base()}/api/v1/extractions`, { method: 'POST', headers: headers(), body: form });
+    const body = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const detail = typeof body.detail === 'string' ? body.detail : `HTTP ${res.status}`;
+      throw new Error(detail);
+    }
+
+    if (body.rejected?.length) {
+      note(formErrorEl, body.rejected.map(r => `${r.file_name}: ${r.error}`).join('  |  '), true);
+    }
+    if (!body.accepted_count) {
+      outEl.innerHTML = '<div class="empty">No file was accepted.</div>';
+      return;
+    }
+
+    goEl.textContent = 'Reading PDFs…';
+    render(body.jobs);
+    await poll(body.extraction_id);
+  } catch (error) {
+    outEl.innerHTML = '<div class="empty">Nothing to show.</div>';
+    note(formErrorEl, error.message, true);
+  } finally {
+    goEl.disabled = false;
+    renderFiles();
+  }
+});
+
+renderFiles();
+</script>
+</body>
+</html>

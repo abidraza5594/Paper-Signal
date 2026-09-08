@@ -201,7 +201,9 @@ class JobRunner:
             logger.exception("PDF job %s failed (%s)", job_id, type(exc).__name__)
             duration_ms = round((time.perf_counter() - started) * 1000)
             if isinstance(exc, AiExtractionError):
-                failure_code = "AI_EXTRACTION_ERROR"
+                # The service classified it (rate limit, auth, provider outage, ...)
+                # so the client can tell a retry from a real problem.
+                failure_code = getattr(exc, "failure_code", "AI_EXTRACTION_ERROR")
             elif isinstance(exc, PdfProcessingError):
                 failure_code = "PDF_PROCESSING_ERROR"
             else:

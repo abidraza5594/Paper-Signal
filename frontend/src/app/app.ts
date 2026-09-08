@@ -838,6 +838,18 @@ export class App implements OnInit, OnDestroy {
   }
 
   retryGuidance(job: PdfJob): string {
+    // Say what to do next. A rate limit needs waiting, bad credentials need the
+    // operator, a page-limit rejection needs a different file.
+    switch (job.failure_code) {
+      case 'AI_RATE_LIMITED':
+        return 'The AI provider is rate limiting this service. Nothing is wrong with your file — wait a few minutes and submit it again.';
+      case 'AI_AUTH_FAILED':
+        return 'The service could not authenticate with its AI provider. This is a server configuration problem, not something you can fix here — contact whoever runs this service.';
+      case 'AI_PROVIDER_UNAVAILABLE':
+        return 'The AI provider is having an outage. Try again in a few minutes.';
+      case 'AI_TIMEOUT':
+        return 'The AI provider did not respond in time. Try again; if it repeats, try a smaller PDF.';
+    }
     if (job.failure_code === 'PDF_PAGE_LIMIT_EXCEEDED' || job.error?.toLowerCase().includes('maximum allowed')) {
       return `Split the PDF into files of ${this.health()?.max_pdf_pages ?? 40} pages or fewer, then submit again.`;
     }

@@ -24,7 +24,24 @@ class AiConfigurationError(RuntimeError):
 
 
 class AiExtractionError(RuntimeError):
-    pass
+    """A failed AI call, carrying enough detail for the caller to act on it.
+
+    `failure_code` is what clients see, so it must say what to do next: retry
+    later, fix credentials, or treat the document as unprocessable.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_code: str = "AI_EXTRACTION_ERROR",
+        status_code: int | None = None,
+        retry_after_seconds: int | None = None,
+    ):
+        super().__init__(message)
+        self.failure_code = failure_code
+        self.status_code = status_code
+        self.retry_after_seconds = retry_after_seconds
 
 
 TRANSIENT_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -50,6 +67,45 @@ def _status_code(exc: Exception) -> int | None:
     response = getattr(exc, "response", None)
     status = getattr(response, "status_code", None)
     return status if isinstance(status, int) else None
+
+
+RATE_LIMIT_MARKERS = ("rate limit", "ratelimit", "too many requests", "quota")
+AUTH_MARKERS = ("unauthorized", "invalid api key", "forbidden", "authentication")
+
+
+def classify_upstream_error(exc: Exception) -> tuple[str, str]:
+    """Map a provider error to (failure_code, message a client can act on)."""
+    status = _status_code(exc)
+    text = f"{type(exc).__name__} {exc}".lower()
+
+    if status == 429 or any(m in text for m in RATE_LIMIT_MARKERS):
+        return (
+            "AI_RATE_LIMITED",
+            "The AI provider is rate limiting this service. The document was not "
+            "processed. Retry in a few minutes.",
+        )
+    if status in (401, 403) or any(m in text for m in AUTH_MARKERS):
+        return (
+            "AI_AUTH_FAILED",
+            "The AI provider rejected this service's credentials. This is a server "
+            "configuration problem; contact the service operator.",
+        )
+    if status is not None and 500 <= status < 600:
+        return (
+            "AI_PROVIDER_UNAVAILABLE",
+            f"The AI provider returned a server error ({status}). The document was "
+            "not processed. Retry shortly.",
+        )
+    if "timeout" in text or "timed out" in text:
+        return (
+            "AI_TIMEOUT",
+            "The AI provider did not respond in time. The document was not processed. "
+            "Retry shortly.",
+        )
+    return (
+        "AI_EXTRACTION_ERROR",
+        "The AI provider could not complete this extraction.",
+    )
 
 
 def is_transient_error(exc: Exception) -> bool:
@@ -114,9 +170,19 @@ class MistralDocumentService:
             )
             time.sleep(min(delay, 30.0) * jitter)
 
-        error_type = type(last_error).__name__ if last_error else "UnknownError"
+        if last_error is None:
+            raise AiExtractionError(f"{label} failed for an unknown reason.")
+
+        code, message = classify_upstream_error(last_error)
+        status = _status_code(last_error)
+        retry_after = None
+        if code in ("AI_RATE_LIMITED", "AI_PROVIDER_UNAVAILABLE", "AI_TIMEOUT"):
+            retry_after = 300 if code == "AI_RATE_LIMITED" else 60
         raise AiExtractionError(
-            f"{label} failed with all configured Mistral API keys ({error_type})."
+            f"{message} (stage: {label})",
+            failure_code=code,
+            status_code=status,
+            retry_after_seconds=retry_after,
         ) from last_error
 
     def ocr_pages(self, path: Path, page_numbers: list[int]) -> dict[int, str]:

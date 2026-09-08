@@ -7,6 +7,7 @@ from app.config import Settings
 from app.mistral_service import (
     AiExtractionError,
     MistralDocumentService,
+    classify_upstream_error,
     is_transient_error,
 )
 from app.schema_service import parse_output_contract
@@ -220,3 +221,80 @@ def test_transient_classification():
     assert is_transient_error(BadRequest("bad")) is False
     assert is_transient_error(RuntimeError("Connection reset by peer")) is True
     assert is_transient_error(RuntimeError("Unauthorized")) is False
+
+
+class Unauthorized(RuntimeError):
+    status_code = 401
+
+
+class ProviderDown(RuntimeError):
+    status_code = 503
+
+
+def test_upstream_errors_are_classified_for_clients():
+    """A caller must be able to tell "retry later" from "this will never work"."""
+    code, message = classify_upstream_error(RateLimited("Rate limit exceeded"))
+    assert code == "AI_RATE_LIMITED"
+    assert "retry" in message.lower()
+
+    code, message = classify_upstream_error(Unauthorized("Unauthorized"))
+    assert code == "AI_AUTH_FAILED"
+    assert "credential" in message.lower()
+
+    code, _ = classify_upstream_error(ProviderDown("Service Unavailable"))
+    assert code == "AI_PROVIDER_UNAVAILABLE"
+
+    code, _ = classify_upstream_error(RuntimeError("Read timed out"))
+    assert code == "AI_TIMEOUT"
+
+    code, _ = classify_upstream_error(BadRequest("Invalid request payload"))
+    assert code == "AI_EXTRACTION_ERROR"
+
+
+def test_rate_limited_failure_reaches_the_caller_as_a_rate_limit(monkeypatch):
+    """The old message said only "SDKError", which told a client nothing."""
+    monkeypatch.setattr("app.mistral_service.time.sleep", lambda _s: None)
+
+    class FakeChat:
+        def complete(self, **_kwargs):
+            raise RateLimited("Requests rate limit exceeded")
+
+    class FakeMistral:
+        def __init__(self, api_key: str):
+            self.chat = FakeChat()
+
+    monkeypatch.setattr("app.mistral_service.Mistral", FakeMistral)
+    settings = Settings(mistral_api_key=SecretStr("only"), _env_file=None)
+    service = MistralDocumentService(settings)
+
+    with pytest.raises(AiExtractionError) as exc:
+        service._chat_json("extract")
+
+    error = exc.value
+    assert error.failure_code == "AI_RATE_LIMITED"
+    assert error.status_code == 429
+    assert error.retry_after_seconds == 300
+    assert "rate limiting" in str(error).lower()
+    assert "SDKError" not in str(error)
+
+
+def test_bad_credentials_are_reported_as_a_configuration_problem(monkeypatch):
+    monkeypatch.setattr("app.mistral_service.time.sleep", lambda _s: None)
+
+    class FakeChat:
+        def complete(self, **_kwargs):
+            raise Unauthorized("Unauthorized")
+
+    class FakeMistral:
+        def __init__(self, api_key: str):
+            self.chat = FakeChat()
+
+    monkeypatch.setattr("app.mistral_service.Mistral", FakeMistral)
+    settings = Settings(mistral_api_key=SecretStr("bad"), _env_file=None)
+    service = MistralDocumentService(settings)
+
+    with pytest.raises(AiExtractionError) as exc:
+        service._chat_json("extract")
+
+    assert exc.value.failure_code == "AI_AUTH_FAILED"
+    assert exc.value.retry_after_seconds is None

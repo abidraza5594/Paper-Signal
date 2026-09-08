@@ -751,7 +751,7 @@ export class App implements OnInit, OnDestroy {
         return 'The AI provider did not respond in time. Try again; if it repeats, try a smaller PDF.';
     }
     if (job.failure_code === 'PDF_PAGE_LIMIT_EXCEEDED' || job.error?.toLowerCase().includes('maximum allowed')) {
-      return `Split the PDF into files of ${this.health()?.max_pdf_pages ?? 40} pages or fewer, then submit again.`;
+      return `Split the PDF into files of ${this.health()?.max_pdf_pages ?? 50} pages or fewer, then submit again.`;
     }
     if (job.failure_stage === 'OCR') return 'Retry with OCR set to Auto, or use a clearer scan. If it repeats, verify the OCR model and API key.';
     if (job.failure_stage === 'Structured extraction') return 'Check that the input is a valid JSON Schema, then retry.';

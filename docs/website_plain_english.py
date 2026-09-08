@@ -102,7 +102,7 @@ Call this before you start, or when something is not working, to confirm the ser
 ## What you get back
 ```json
 {"status":"ok","ai_configured":true,"require_api_key":true,
- "max_upload_mb":200,"max_pdf_pages":40,"max_batch_files":10}
+ "max_upload_mb":200,"max_pdf_pages":50,"max_batch_files":10}
 ```
 
 | Field | What it tells you |

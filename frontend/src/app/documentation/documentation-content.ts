@@ -584,7 +584,7 @@ export const DOC_PAGES: DocPage[] = [
       {
         "kind": "code",
         "language": "json",
-        "text": "{\"status\":\"ok\",\"ai_configured\":true,\"require_api_key\":true,\n \"max_upload_mb\":200,\"max_pdf_pages\":40,\"max_batch_files\":10}"
+        "text": "{\"status\":\"ok\",\"ai_configured\":true,\"require_api_key\":true,\n \"max_upload_mb\":200,\"max_pdf_pages\":50,\"max_batch_files\":10}"
       },
       {
         "kind": "table",
@@ -624,7 +624,7 @@ export const DOC_PAGES: DocPage[] = [
         "html": "Read the limits from here instead of hard-coding them. The owner can change them."
       }
     ],
-    "search": "\n## When to use this\nCall this before you start, or when something is not working, to confirm the service is reachable. This is the only endpoint that does not need an API key.\n\n## What you get back\n```json\n{\"status\":\"ok\",\"ai_configured\":true,\"require_api_key\":true,\n \"max_upload_mb\":200,\"max_pdf_pages\":40,\"max_batch_files\":10}\n```\n\n| Field | What it tells you |\n|---|---|\n| status | \"ok\" means the service is running. |\n| require_api_key | true means every other endpoint needs your key. |\n| max_batch_files | How many PDFs you can send in one request. |\n| max_upload_mb | The largest single PDF you can send. |\n| max_pdf_pages | The most pages one PDF can have. |\n| ai_configured | false means the owner has not set up the AI provider yet. |\n\nRead the limits from here instead of hard-coding them. The owner can change them.\n",
+    "search": "\n## When to use this\nCall this before you start, or when something is not working, to confirm the service is reachable. This is the only endpoint that does not need an API key.\n\n## What you get back\n```json\n{\"status\":\"ok\",\"ai_configured\":true,\"require_api_key\":true,\n \"max_upload_mb\":200,\"max_pdf_pages\":50,\"max_batch_files\":10}\n```\n\n| Field | What it tells you |\n|---|---|\n| status | \"ok\" means the service is running. |\n| require_api_key | true means every other endpoint needs your key. |\n| max_batch_files | How many PDFs you can send in one request. |\n| max_upload_mb | The largest single PDF you can send. |\n| max_pdf_pages | The most pages one PDF can have. |\n| ai_configured | false means the owner has not set up the AI provider yet. |\n\nRead the limits from here instead of hard-coding them. The owner can change them.\n",
     "method": "GET",
     "path": "/api/health",
     "success": "200 OK",

@@ -43,7 +43,7 @@
           <label class="drop" tabindex="0" role="button" aria-label="Add PDF files" [class.dragging]="isDragging()" [class.filled]="selectedFiles().length" (keydown.enter)="$event.preventDefault(); fileInput.click()" (keydown.space)="$event.preventDefault(); fileInput.click()" (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)">
             <input #fileInput tabindex="-1" type="file" multiple accept="application/pdf,.pdf" (change)="onFileInput($event)" />
             <span class="drop-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M7 18.5v7h18v-7M16 22V6m0 0-6 6m6-6 6 6" /></svg></span>
-            <span class="drop-text"><strong>Drop PDFs here or click to browse</strong><small>Up to {{ maxBatchFiles() }} files &middot; max {{ health()?.max_pdf_pages || 40 }} pages each</small></span>
+            <span class="drop-text"><strong>Drop PDFs here or click to browse</strong><small>Up to {{ maxBatchFiles() }} files &middot; max {{ health()?.max_pdf_pages || 50 }} pages each</small></span>
           </label>
 
           @if (selectedFiles().length) {

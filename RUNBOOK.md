@@ -122,15 +122,17 @@ MISTRAL_API_KEYS=<aapki key>
 REQUIRE_API_KEY=true              # bina API key koi call nahi kar sakta
 ADMIN_TOKEN=<key banane ke liye>
 LOCAL_WORKER_COUNT=2              # 10 nahi — 1 GB RAM me 10 parallel PDF crash kar denge
-MAX_UPLOAD_MB=50                  # local pe 200 tha
-MAX_PDF_PAGES=25                  # local pe 40 tha
-MAX_BATCH_FILES=5                 # local pe 10 tha
-CORS_ORIGINS=https://papersignal.duckdns.org
+MAX_UPLOAD_MB=200                 # upload disk pe stream hota hai, RAM me nahi
+MAX_PDF_PAGES=50                  # ek page ek-ek karke render hota hai, peak RAM nahi badhti
+MAX_BATCH_FILES=10                # files disk pe jaati hain, sirf 2 ek saath process hoti hain
+CORS_ORIGINS=https://papersignal.duckdns.org   # browser clients ke domain yahan add karo
 ```
 
-**Ye limits kam kyun ki:** `t3.micro` me sirf 1 GB RAM hai. PDF ke har page ko image me
-convert karna padta hai jo RAM khaata hai. Default settings pe Linux app ko maar deta
-(out-of-memory kill).
+**Sirf `LOCAL_WORKER_COUNT` kam rakha hai, baaki limits poori hain.** `t3.micro` me 1 GB RAM
+hai, aur RAM ka asli dabaav *parallel* jobs se aata hai — har job apna page image me render
+karta hai. File size aur page count se peak RAM nahi badhti: upload chunk-by-chunk disk pe
+likha jaata hai, aur pages ek-ek karke render hote hain. Isliye 200 MB aur 50 pages safe hain,
+par 10 parallel jobs nahi.
 
 ### Step 7 — Frontend upload
 
@@ -152,7 +154,7 @@ papersignal.duckdns.org {
 	root * /var/www/papersignal
 	handle /api/* { reverse_proxy localhost:8000 }
 	handle { try_files {path} /index.html; file_server }
-	request_body { max_size 60MB }
+	request_body { max_size 220MB }
 }
 ```
 

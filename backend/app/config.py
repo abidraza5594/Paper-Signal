@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     app_env: str = "local"
     data_dir: Path = Path("data")
     max_upload_mb: int = Field(default=200, ge=1, le=512)
-    max_pdf_pages: int = Field(default=40, ge=1, le=500)
+    max_pdf_pages: int = Field(default=50, ge=1, le=500)
     max_batch_files: int = Field(default=10, ge=1, le=50)
     max_batch_total_mb: int = Field(default=500, ge=1, le=2048)
     max_pending_jobs: int = Field(default=100, ge=1, le=10000)

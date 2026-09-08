@@ -58,7 +58,7 @@ JSON Schema defines the field names, nesting and basic types. Output normalizati
 
 Jobs move from queued to processing and then completed or failed. A failed job lookup still returns HTTP 200; inspect its status and failure_code. Progress 100 can represent success or failure. There is no guaranteed completion time or webhook; integrations need a polling deadline and later-lookup handling.
 
-Observed backend limits: 200 MB per PDF, 40 pages per PDF, 10 files per batch and 500 MB combined batch size. Reverse-proxy limits can be lower. Confirm the effective limit before promising these maximums to users.
+Observed backend limits: 200 MB per PDF, 50 pages per PDF, 10 files per batch and 500 MB combined batch size. Reverse-proxy limits can be lower. Confirm the effective limit before promising these maximums to users.
 
 ## Access and data handling
 

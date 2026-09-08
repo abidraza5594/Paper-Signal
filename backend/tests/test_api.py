@@ -32,7 +32,7 @@ def test_health_reports_upload_limit():
 
     assert response.status_code == 200
     assert response.json()["max_upload_mb"] == 200
-    assert response.json()["max_pdf_pages"] == 40
+    assert response.json()["max_pdf_pages"] == 50
     assert response.json()["max_batch_files"] == 10
     assert response.json()["max_batch_total_mb"] == 500
 
@@ -42,7 +42,7 @@ def test_rejects_pdf_over_page_limit_before_job_creation(monkeypatch):
     with TestClient(main.app) as client:
         response = client.post(
             "/api/v1/extractions",
-            files=[("files", ("too-long.pdf", multipage_pdf_bytes(41), "application/pdf"))],
+            files=[("files", ("too-long.pdf", multipage_pdf_bytes(51), "application/pdf"))],
             data={"output_template": OUTPUT_SCHEMA, "ocr_mode": "auto"},
         )
 
@@ -51,7 +51,7 @@ def test_rejects_pdf_over_page_limit_before_job_creation(monkeypatch):
     payload = response.json()
     assert payload["accepted_count"] == 0
     assert payload["rejected"][0]["error"] == (
-        "PDF rejected: 41 pages detected. Maximum allowed is 40 pages."
+        "PDF rejected: 51 pages detected. Maximum allowed is 50 pages."
     )
 
 

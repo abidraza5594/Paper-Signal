@@ -12,7 +12,7 @@ Upload a batch of PDFs, provide one required JSON Schema, and receive contract-s
 - Configurable batch limits (10 PDFs and 500 MB combined by default)
 - Per-file batch rejection, so one bad PDF does not discard valid documents
 - Bounded background queue to prevent unbounded memory growth under load
-- Preflight 40-page hard limit before OCR or LLM work starts
+- Preflight page limit (50 by default) enforced before OCR or LLM work starts
 - PDF signature, encryption, and corruption checks
 - PyMuPDF text extraction for digital PDFs
 - Conditional page fallback: PyMuPDF text → Mistral Small vision → Mistral OCR

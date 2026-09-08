@@ -76,7 +76,7 @@ Client-key authentication applies in service mode. Admin operations use only `X-
   "ai_configured": true,
   "require_api_key": true,
   "max_upload_mb": 200,
-  "max_pdf_pages": 40,
+  "max_pdf_pages": 50,
   "max_batch_files": 10,
   "max_batch_total_mb": 500,
   "text_model": "mistral-small-2603",

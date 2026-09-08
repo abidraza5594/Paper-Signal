@@ -41,21 +41,26 @@ def test_rejects_pdf_over_page_limit_before_job_creation(monkeypatch):
     monkeypatch.setattr(main.settings, "mistral_api_key", SecretStr("test-key"))
     with TestClient(main.app) as client:
         response = client.post(
-            "/api/jobs",
-            files={"file": ("too-long.pdf", multipage_pdf_bytes(41), "application/pdf")},
+            "/api/v1/extractions",
+            files=[("files", ("too-long.pdf", multipage_pdf_bytes(41), "application/pdf"))],
             data={"output_template": OUTPUT_SCHEMA, "ocr_mode": "auto"},
         )
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "PDF rejected: 41 pages detected. Maximum allowed is 40 pages."
+    # An oversized PDF is rejected per file, before any AI work starts.
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["accepted_count"] == 0
+    assert payload["rejected"][0]["error"] == (
+        "PDF rejected: 41 pages detected. Maximum allowed is 40 pages."
+    )
 
 
 def test_rejects_invalid_output_json(monkeypatch):
     monkeypatch.setattr(main.settings, "mistral_api_key", SecretStr("test-key"))
     with TestClient(main.app) as client:
         response = client.post(
-            "/api/jobs",
-            files={"file": ("invoice.pdf", pdf_bytes(), "application/pdf")},
+            "/api/v1/extractions",
+            files=[("files", ("invoice.pdf", pdf_bytes(), "application/pdf"))],
             data={"output_template": "{not-json}"},
         )
 
@@ -70,8 +75,8 @@ def test_rejects_free_text_instead_of_starting_extraction(monkeypatch):
 
     with TestClient(main.app) as client:
         response = client.post(
-            "/api/jobs",
-            files={"file": ("invoice.pdf", pdf_bytes(), "application/pdf")},
+            "/api/v1/extractions",
+            files=[("files", ("invoice.pdf", pdf_bytes(), "application/pdf"))],
             data={"output_template": "lorem"},
         )
 
@@ -85,8 +90,8 @@ def test_rejects_example_json_object(monkeypatch):
 
     with TestClient(main.app) as client:
         response = client.post(
-            "/api/jobs",
-            files={"file": ("invoice.pdf", pdf_bytes(), "application/pdf")},
+            "/api/v1/extractions",
+            files=[("files", ("invoice.pdf", pdf_bytes(), "application/pdf"))],
             data={"output_template": '{"total":"string"}'},
         )
 
@@ -94,30 +99,32 @@ def test_rejects_example_json_object(monkeypatch):
     assert "JSON Schema" in response.json()["detail"]
 
 
-def test_create_job_returns_202_without_waiting_for_processing(monkeypatch):
+def test_submit_returns_202_without_waiting_for_processing(monkeypatch):
     submitted: list[str] = []
     monkeypatch.setattr(main.settings, "mistral_api_key", SecretStr("test-key"))
     monkeypatch.setattr(main.runner, "submit", submitted.append)
 
     with TestClient(main.app) as client:
         response = client.post(
-            "/api/jobs",
-            files={"file": ("invoice.pdf", pdf_bytes(), "application/pdf")},
+            "/api/v1/extractions",
+            files=[("files", ("invoice.pdf", pdf_bytes(), "application/pdf"))],
             data={"output_template": OUTPUT_SCHEMA, "ocr_mode": "auto"},
         )
 
     assert response.status_code == 202
     payload = response.json()
-    assert payload["status"] == "queued"
-    assert payload["file_name"] == "invoice.pdf"
-    assert payload["instruction"] == "Extract only the fields defined by the supplied JSON Schema."
-    assert payload["schema_mode"] == "json_schema"
-    assert submitted == [payload["id"]]
+    assert payload["extraction_id"]
+    job = payload["jobs"][0]
+    assert job["status"] == "queued"
+    assert job["file_name"] == "invoice.pdf"
+    assert job["schema_mode"] == "json_schema"
+    assert job["extraction_id"] == payload["extraction_id"]
+    assert submitted == [job["id"]]
 
-    stored = main.database.get(payload["id"])
+    stored = main.database.get(job["id"])
     assert stored is not None
     main.storage.delete(stored.file_path)
-    main.database.delete(payload["id"])
+    main.database.delete(job["id"])
 
 
 def test_batch_accepts_multiple_pdfs_and_reports_invalid_files(monkeypatch):
@@ -127,7 +134,7 @@ def test_batch_accepts_multiple_pdfs_and_reports_invalid_files(monkeypatch):
 
     with TestClient(main.app) as client:
         response = client.post(
-            "/api/jobs/batch",
+            "/api/v1/extractions",
             files=[
                 ("files", ("one.pdf", pdf_bytes(), "application/pdf")),
                 ("files", ("broken.pdf", b"not-a-pdf", "application/pdf")),
@@ -152,13 +159,13 @@ def test_batch_accepts_multiple_pdfs_and_reports_invalid_files(monkeypatch):
         main.database.delete(job["id"])
 
 
-def test_batch_jobs_share_a_batch_id_and_can_be_reloaded_together(monkeypatch):
+def test_documents_share_an_extraction_id_and_reload_together(monkeypatch):
     monkeypatch.setattr(main.settings, "mistral_api_key", SecretStr("test-key"))
     monkeypatch.setattr(main.runner, "submit", lambda job_id: None)
 
     with TestClient(main.app) as client:
         response = client.post(
-            "/api/jobs/batch",
+            "/api/v1/extractions",
             files=[
                 ("files", ("one.pdf", pdf_bytes(), "application/pdf")),
                 ("files", ("two.pdf", pdf_bytes(), "application/pdf")),
@@ -166,16 +173,16 @@ def test_batch_jobs_share_a_batch_id_and_can_be_reloaded_together(monkeypatch):
             data={"output_template": OUTPUT_SCHEMA, "ocr_mode": "auto"},
         )
         payload = response.json()
-        batch_id = payload["batch_id"]
+        extraction_id = payload["extraction_id"]
 
-        assert batch_id
-        assert {job["batch_id"] for job in payload["jobs"]} == {batch_id}
+        assert extraction_id
+        assert {job["extraction_id"] for job in payload["jobs"]} == {extraction_id}
 
-        reloaded = client.get(f"/api/batches/{batch_id}")
+        reloaded = client.get(f"/api/v1/extractions/{extraction_id}")
         assert reloaded.status_code == 200
         assert [job["file_name"] for job in reloaded.json()] == ["one.pdf", "two.pdf"]
 
-        assert client.get("/api/batches/does-not-exist").status_code == 404
+        assert client.get("/api/v1/extractions/does-not-exist").status_code == 404
 
     for job in payload["jobs"]:
         stored = main.database.get(job["id"])
@@ -190,7 +197,7 @@ def test_batch_rejects_more_than_configured_file_limit(monkeypatch):
 
     with TestClient(main.app) as client:
         response = client.post(
-            "/api/jobs/batch",
+            "/api/v1/extractions",
             files=[
                 ("files", ("one.pdf", pdf_bytes(), "application/pdf")),
                 ("files", ("two.pdf", pdf_bytes(), "application/pdf")),

@@ -158,7 +158,12 @@ def _check_quota(caller: ApiKeyRecord | None, documents: int) -> None:
         )
 
 
-@app.get("/api/health", response_model=HealthResponse)
+@app.get(
+    "/api/health",
+    response_model=HealthResponse,
+    summary="Service health and limits",
+    description="Public. No API key needed. Use it to check the service is up and read its limits.",
+)
 def health() -> HealthResponse:
     return HealthResponse(
         ai_configured=settings.ai_configured,
@@ -232,41 +237,17 @@ def _enqueue_job(job: JobRecord) -> JobPublic:
     return JobPublic.from_record(job)
 
 
-@app.post("/api/jobs", response_model=JobPublic, status_code=status.HTTP_202_ACCEPTED)
-async def create_job(
-    file: UploadFile = File(...),
-    output_template: str = Form(..., min_length=2, max_length=12000),
-    ocr_mode: OcrMode = Form(default=OcrMode.auto),
-    caller: ApiKeyRecord | None = Depends(require_caller),
-) -> JobPublic:
-    _ensure_ai_configured()
-    _check_quota(caller, 1)
-    try:
-        contract = parse_json_schema_contract(output_template)
-    except OutputSchemaError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-
-    try:
-        job = await _prepare_job(
-            file, output_template, ocr_mode, contract.mode, api_key_id=_owner_id(caller)
-        )
-    except (UploadValidationError, PdfProcessingError) as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    try:
-        accepted = _enqueue_job(job)
-        if caller:
-            api_keys.record_documents(caller.id, 1, job.page_count or 0)
-        return accepted
-    except JobQueueFullError as exc:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
-
-
 @app.post(
-    "/api/jobs/batch",
+    "/api/v1/extractions",
     response_model=BatchJobResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    summary="Submit documents for extraction",
+    description=(
+        "Upload one or more PDFs together with a JSON Schema describing the fields you "
+        "want. Returns immediately with an extraction id; poll it for the results."
+    ),
 )
-async def create_job_batch(
+async def submit_extraction(
     files: list[UploadFile] = File(...),
     output_template: str = Form(..., min_length=2, max_length=12000),
     ocr_mode: OcrMode = Form(default=OcrMode.auto),
@@ -341,55 +322,31 @@ async def create_job_batch(
     )
 
 
-@app.get("/api/jobs/batch", response_model=list[JobPublic])
-def get_job_batch(
-    ids: str, caller: ApiKeyRecord | None = Depends(require_caller)
+@app.get(
+    "/api/v1/extractions/{extraction_id}",
+    response_model=list[JobPublic],
+    summary="Get extraction status and results",
+    description=(
+        "Returns one entry per submitted document. Poll until every entry reports "
+        "`completed` or `failed`; the extracted JSON is in `result.data`."
+    ),
+)
+def get_extraction(
+    extraction_id: str, caller: ApiKeyRecord | None = Depends(require_caller)
 ) -> list[JobPublic]:
-    job_ids = [item.strip() for item in ids.split(",") if item.strip()]
-    if not job_ids:
-        raise HTTPException(status_code=422, detail="Provide at least one job ID.")
-    if len(job_ids) > 50:
-        raise HTTPException(status_code=422, detail="At most 50 job IDs can be checked at once.")
-    owner = _owner_id(caller)
-    jobs = database.get_many(job_ids)
-    return [
-        JobPublic.from_record(job)
-        for job in jobs
-        if owner is None or job.api_key_id == owner
-    ]
-
-
-@app.get("/api/batches/{batch_id}", response_model=list[JobPublic])
-def get_batch(
-    batch_id: str, caller: ApiKeyRecord | None = Depends(require_caller)
-) -> list[JobPublic]:
-    jobs = database.list_by_batch(batch_id, _owner_id(caller))
+    jobs = database.list_by_batch(extraction_id, _owner_id(caller))
     if not jobs:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Extraction not found.")
     return [JobPublic.from_record(job) for job in jobs]
 
 
-@app.get("/api/jobs", response_model=list[JobPublic])
-def list_jobs(
-    limit: int = 20, caller: ApiKeyRecord | None = Depends(require_caller)
-) -> list[JobPublic]:
-    safe_limit = min(max(limit, 1), 100)
-    return [
-        JobPublic.from_record(job)
-        for job in database.list_recent(safe_limit, _owner_id(caller))
-    ]
-
-
-@app.get("/api/jobs/{job_id}", response_model=JobPublic)
-def get_job(job_id: str, caller: ApiKeyRecord | None = Depends(require_caller)) -> JobPublic:
-    job = database.get(job_id, _owner_id(caller))
-    if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found.")
-    return JobPublic.from_record(job)
-
-
-@app.get("/api/usage", response_model=UsageResponse)
-def get_usage(caller: ApiKeyRecord | None = Depends(require_caller)) -> UsageResponse:
+@app.get(
+    "/api/v1/account",
+    response_model=UsageResponse,
+    summary="Your API key's limits and usage",
+    description="Shows the calling key's rate limit, monthly quota, and what is left.",
+)
+def get_account(caller: ApiKeyRecord | None = Depends(require_caller)) -> UsageResponse:
     """What the calling key has spent this month and what is left."""
     if caller is None:
         raise HTTPException(
@@ -408,10 +365,16 @@ def get_usage(caller: ApiKeyRecord | None = Depends(require_caller)) -> UsageRes
 
 
 @app.post(
-    "/api/admin/keys",
+    "/api/v1/keys",
     response_model=ApiKeyCreated,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_admin)],
+    summary="Create an API key",
+    description=(
+        "Issues a key for one client. Needs the X-Admin-Token header. The raw key is "
+        "returned once and cannot be recovered later. List and revoke keys on the "
+        "server with manage_keys.py."
+    ),
 )
 def create_api_key(payload: ApiKeyCreateRequest) -> ApiKeyCreated:
     """Issue a key. The raw value is returned once and never stored in clear text."""
@@ -428,48 +391,28 @@ def create_api_key(payload: ApiKeyCreateRequest) -> ApiKeyCreated:
     return ApiKeyCreated(key=raw_key, api_key=record.to_public())
 
 
-@app.get(
-    "/api/admin/keys",
-    response_model=list[ApiKeyPublic],
-    dependencies=[Depends(require_admin)],
-)
-def list_api_keys() -> list[ApiKeyPublic]:
-    return [
-        record.to_public(api_keys.documents_used(record.id)) for record in api_keys.list_all()
-    ]
-
-
 @app.delete(
-    "/api/admin/keys/{key_id}",
+    "/api/v1/extractions/{extraction_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
-    dependencies=[Depends(require_admin)],
+    summary="Delete an extraction and its uploaded files",
+    description=(
+        "Removes every document in the extraction, its stored PDF, and its results. "
+        "Returns 409 while any document is still processing."
+    ),
 )
-def revoke_api_key(key_id: str) -> Response:
-    if api_keys.get(key_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found.")
-    if not api_keys.revoke(key_id):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="This key is already revoked."
-        )
-    rate_limiter.reset(key_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@app.delete(
-    "/api/jobs/{job_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
-)
-def delete_job(job_id: str, caller: ApiKeyRecord | None = Depends(require_caller)) -> Response:
-    job = database.get(job_id, _owner_id(caller))
-    if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found.")
-    if job.status == JobStatus.processing:
+def delete_extraction(
+    extraction_id: str, caller: ApiKeyRecord | None = Depends(require_caller)
+) -> Response:
+    jobs = database.list_by_batch(extraction_id, _owner_id(caller))
+    if not jobs:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Extraction not found.")
+    if any(job.status == JobStatus.processing for job in jobs):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="A processing job cannot be deleted. Wait for it to finish.",
+            detail="This extraction is still processing. Wait for it to finish.",
         )
-    storage.delete(job.file_path)
-    database.delete(job_id)
+    for job in jobs:
+        storage.delete(job.file_path)
+        database.delete(job.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

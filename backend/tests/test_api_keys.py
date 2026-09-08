@@ -61,41 +61,63 @@ def test_keys_are_stored_hashed_and_returned_once(service):
 
 def test_requests_without_a_key_are_rejected_when_auth_is_on(service):
     with TestClient(main.app) as client:
-        assert client.get("/api/jobs").status_code == 401
-        assert client.get("/api/jobs", headers={"X-API-Key": "ps_live_nope"}).status_code == 401
+        assert client.get("/api/v1/account").status_code == 401
+        assert client.get("/api/v1/account", headers={"X-API-Key": "ps_live_nope"}).status_code == 401
+        # health stays public so a client can discover the service before it has a key
+        assert client.get("/api/health").status_code == 200
 
 
-def test_admin_can_issue_list_and_revoke_keys(service):
+def test_admin_can_issue_a_key_over_http(service):
+    """Creating a key is the only key operation exposed over HTTP.
+
+    Listing and revoking are deliberately server-side only (manage_keys.py), so a
+    leaked admin token cannot enumerate or disable every client's access.
+    """
     with TestClient(main.app) as client:
-        assert client.post("/api/admin/keys", json={"name": "acme"}).status_code == 401
+        assert client.post("/api/v1/keys", json={"name": "acme"}).status_code == 401
 
         created = client.post(
-            "/api/admin/keys",
+            "/api/v1/keys",
             json={"name": "acme", "rate_limit_per_minute": 5, "monthly_document_quota": 10},
             headers=ADMIN,
         )
         assert created.status_code == 201
         body = created.json()
         raw_key = body["key"]
-        key_id = body["api_key"]["id"]
         assert body["api_key"]["name"] == "acme"
+        assert body["api_key"]["rate_limit_per_minute"] == 5
 
-        listed = client.get("/api/admin/keys", headers=ADMIN).json()
-        assert [item["id"] for item in listed] == [key_id]
-        assert "key" not in listed[0]
+        assert client.get("/api/v1/account", headers={"X-API-Key": raw_key}).status_code == 200
 
-        assert client.get("/api/jobs", headers={"X-API-Key": raw_key}).status_code == 200
+    # revocation still works, through the store the CLI uses
+    assert service.revoke(body["api_key"]["id"]) is True
+    with TestClient(main.app) as client:
+        assert client.get("/api/v1/account", headers={"X-API-Key": raw_key}).status_code == 401
 
-        assert client.delete(f"/api/admin/keys/{key_id}", headers=ADMIN).status_code == 204
-        assert client.delete(f"/api/admin/keys/{key_id}", headers=ADMIN).status_code == 409
-        assert client.get("/api/jobs", headers={"X-API-Key": raw_key}).status_code == 401
+
+def test_removed_endpoints_are_gone(service):
+    """The old surface was 12 endpoints; these were dropped deliberately."""
+    _, raw_key = service.create("probe", 60, 100)
+    headers = {"X-API-Key": raw_key}
+    with TestClient(main.app) as client:
+        for method, path in [
+            ("post", "/api/jobs"),
+            ("get", "/api/jobs"),
+            ("get", "/api/jobs/some-id"),
+            ("get", "/api/jobs/batch"),
+            ("get", "/api/usage"),
+            ("get", "/api/batches/some-id"),
+            ("get", "/api/admin/keys"),
+        ]:
+            response = getattr(client, method)(path, headers={**headers, **ADMIN})
+            assert response.status_code == 404, f"{method.upper()} {path} still exists"
 
 
 def test_bearer_header_is_accepted_too(service):
     _, raw_key = service.create("bearer client", 60, 100)
     with TestClient(main.app) as client:
         assert client.get(
-            "/api/jobs", headers={"Authorization": f"Bearer {raw_key}"}
+            "/api/v1/account", headers={"Authorization": f"Bearer {raw_key}"}
         ).status_code == 200
 
 
@@ -105,7 +127,7 @@ def test_each_client_only_sees_its_own_jobs(service):
 
     with TestClient(main.app) as client:
         created = client.post(
-            "/api/jobs/batch",
+            "/api/v1/extractions",
             files=[("files", ("a.pdf", pdf_bytes(), "application/pdf"))],
             data={"output_template": OUTPUT_SCHEMA, "ocr_mode": "auto"},
             headers={"X-API-Key": key_a},
@@ -113,19 +135,19 @@ def test_each_client_only_sees_its_own_jobs(service):
         assert created.status_code == 202
         payload = created.json()
         job_id = payload["jobs"][0]["id"]
-        batch_id = payload["batch_id"]
+        extraction_id = payload["extraction_id"]
 
-        assert client.get("/api/jobs", headers={"X-API-Key": key_a}).json()[0]["id"] == job_id
-        assert client.get(f"/api/jobs/{job_id}", headers={"X-API-Key": key_a}).status_code == 200
+        owner = client.get(f"/api/v1/extractions/{extraction_id}", headers={"X-API-Key": key_a})
+        assert owner.status_code == 200
+        assert owner.json()[0]["id"] == job_id
 
-        # the other client cannot read, list, or delete it
-        assert client.get("/api/jobs", headers={"X-API-Key": key_b}).json() == []
-        assert client.get(f"/api/jobs/{job_id}", headers={"X-API-Key": key_b}).status_code == 404
-        assert client.get(f"/api/batches/{batch_id}", headers={"X-API-Key": key_b}).status_code == 404
+        # the other client cannot read or delete it, and is not told it exists
         assert client.get(
-            "/api/jobs/batch", params={"ids": job_id}, headers={"X-API-Key": key_b}
-        ).json() == []
-        assert client.delete(f"/api/jobs/{job_id}", headers={"X-API-Key": key_b}).status_code == 404
+            f"/api/v1/extractions/{extraction_id}", headers={"X-API-Key": key_b}
+        ).status_code == 404
+        assert client.delete(
+            f"/api/v1/extractions/{extraction_id}", headers={"X-API-Key": key_b}
+        ).status_code == 404
 
         _cleanup(payload["jobs"])
 
@@ -133,9 +155,9 @@ def test_each_client_only_sees_its_own_jobs(service):
 def test_rate_limit_returns_429_with_retry_after(service):
     _, raw_key = service.create("busy client", 2, 100)
     with TestClient(main.app) as client:
-        assert client.get("/api/jobs", headers={"X-API-Key": raw_key}).status_code == 200
-        assert client.get("/api/jobs", headers={"X-API-Key": raw_key}).status_code == 200
-        blocked = client.get("/api/jobs", headers={"X-API-Key": raw_key})
+        assert client.get("/api/v1/account", headers={"X-API-Key": raw_key}).status_code == 200
+        assert client.get("/api/v1/account", headers={"X-API-Key": raw_key}).status_code == 200
+        blocked = client.get("/api/v1/account", headers={"X-API-Key": raw_key})
 
     assert blocked.status_code == 429
     assert int(blocked.headers["Retry-After"]) >= 1
@@ -148,7 +170,7 @@ def test_monthly_quota_blocks_further_documents(service):
 
     with TestClient(main.app) as client:
         response = client.post(
-            "/api/jobs/batch",
+            "/api/v1/extractions",
             files=[("files", ("a.pdf", pdf_bytes(), "application/pdf"))],
             data={"output_template": OUTPUT_SCHEMA, "ocr_mode": "auto"},
             headers={"X-API-Key": raw_key},
@@ -163,7 +185,7 @@ def test_usage_endpoint_reports_remaining_documents(service):
     service.record_documents(record.id, 4, pages=12)
 
     with TestClient(main.app) as client:
-        usage = client.get("/api/usage", headers={"X-API-Key": raw_key}).json()
+        usage = client.get("/api/v1/account", headers={"X-API-Key": raw_key}).json()
 
     assert usage["documents_this_month"] == 4
     assert usage["documents_remaining"] == 6
@@ -176,7 +198,7 @@ def test_submitting_documents_counts_against_the_quota(service):
 
     with TestClient(main.app) as client:
         created = client.post(
-            "/api/jobs/batch",
+            "/api/v1/extractions",
             files=[
                 ("files", ("a.pdf", pdf_bytes(), "application/pdf")),
                 ("files", ("b.pdf", pdf_bytes(), "application/pdf")),
@@ -196,8 +218,9 @@ def test_submitting_documents_counts_against_the_quota(service):
 def test_local_mode_without_auth_still_works(service, monkeypatch):
     monkeypatch.setattr(main.settings, "require_api_key", False)
     with TestClient(main.app) as client:
-        assert client.get("/api/jobs").status_code == 200
-        assert client.get("/api/usage").status_code == 401
+        assert client.get("/api/health").status_code == 200
+        # account still needs a key: it reports a specific key's usage
+        assert client.get("/api/v1/account").status_code == 401
 
 
 def test_rate_limiter_window_is_per_key():

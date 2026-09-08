@@ -126,7 +126,6 @@ describe('App states', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'mistral-small', vision_model: 'mistral-small', ocr_model: 'mistral-ocr' });
-    http.expectOne('/api/jobs?limit=20').flush([]);
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('No results yet');
   });
@@ -135,7 +134,6 @@ describe('App states', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     http.expectOne('/api/health').flush({ status: 'ok', ai_configured: false, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'mistral-small', vision_model: 'mistral-small', ocr_model: 'mistral-ocr' });
-    http.expectOne('/api/jobs?limit=20').flush([]);
     fixture.detectChanges();
     const button = fixture.nativeElement.querySelector('.primary-action') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
@@ -202,16 +200,17 @@ describe('App states', () => {
     app.validateSchemaInput();
     app.submit();
 
-    const request = http.expectOne('/api/jobs/batch');
+    const request = http.expectOne('/api/v1/extractions');
     expect(request.request.method).toBe('POST');
     expect((request.request.body as FormData).getAll('files').length).toBe(2);
-    request.flush({ jobs: [{ id: 'batch-job', status: 'queued', progress: 0, file_name: 'one.pdf' }], rejected: [{ file_name: 'two.pdf', error: 'Page count exceeded' }], accepted_count: 1, rejected_count: 1 });
+    request.flush({ extraction_id: 'ext-1', jobs: [{ id: 'batch-job', extraction_id: 'ext-1', status: 'queued', progress: 0, file_name: 'one.pdf' }], rejected: [{ file_name: 'two.pdf', error: 'Page count exceeded' }], accepted_count: 1, rejected_count: 1 });
 
     expect(app.batchSummary()?.accepted_count).toBe(1);
     expect(app.activeJob()?.id).toBe('batch-job');
-    expect(app.recentJobs()[0].id).toBe('batch-job');
-    http.expectOne('/api/jobs/batch-job').flush({ id: 'batch-job', status: 'completed', progress: 100, file_name: 'one.pdf', result: {} });
-    http.expectOne('/api/jobs?limit=20').flush([]);
+    // one poll for the whole extraction, not one per document
+    http.expectOne('/api/v1/extractions/ext-1').flush([
+      { id: 'batch-job', extraction_id: 'ext-1', status: 'completed', progress: 100, file_name: 'one.pdf', result: {} },
+    ]);
   });
 
   it('opens on the JSON Schema editor and shows the service limits', () => {
@@ -219,7 +218,6 @@ describe('App states', () => {
     expect(fixture.componentInstance.inputMode()).toBe('advanced');
     fixture.detectChanges();
     http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'mistral-small', vision_model: 'mistral-small', ocr_model: 'mistral-ocr' });
-    http.expectOne('/api/jobs?limit=20').flush([]);
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('max 40 pages');
     expect(fixture.nativeElement.textContent).toContain('Only JSON Schema is accepted');
@@ -234,7 +232,6 @@ describe('App states', () => {
     const app = fixture.componentInstance;
     fixture.detectChanges();
     http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'mistral-small', vision_model: 'mistral-small', ocr_model: 'mistral-ocr' });
-    http.expectOne('/api/jobs?limit=20').flush([]);
 
     app.outputTemplate = '{trainName:"string"}';
     app.validateSchemaInput();
@@ -255,7 +252,6 @@ describe('App states', () => {
     app.expandedJobId.set('job-123');
     fixture.detectChanges();
     http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'mistral-small', vision_model: 'mistral-small', ocr_model: 'mistral-ocr' });
-    http.expectOne('/api/jobs?limit=20').flush([]);
     expect(app.ocrCoverage(app.activeJob()!)).toBe(8);
     expect(fixture.nativeElement.textContent).toContain('Extraction audit');
     expect(fixture.nativeElement.querySelector('.json-view')).toBeTruthy();
@@ -274,7 +270,6 @@ describe('App states', () => {
     app.expandedJobId.set('old-job');
     fixture.detectChanges();
     http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'mistral-small', vision_model: 'mistral-small', ocr_model: 'mistral-ocr' });
-    http.expectOne('/api/jobs?limit=20').flush([]);
     expect(app.visionPages(oldJob)).toBe(0);
     expect(app.visionModel(oldJob)).toBe('Not used');
     expect(app.routeSummary(oldJob)).toBe('P 4 / V 0 / O 0');
@@ -296,7 +291,6 @@ describe('App states', () => {
     fixture.componentInstance.expandedJobId.set('python-only');
     fixture.detectChanges();
     http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'mistral-small', vision_model: 'mistral-small', ocr_model: 'mistral-ocr' });
-    http.expectOne('/api/jobs?limit=20').flush([]);
 
     expect(fixture.nativeElement.querySelector('.python-step').classList).toContain('done');
     expect(fixture.nativeElement.querySelector('.vision-step').classList).toContain('skipped');
@@ -334,10 +328,11 @@ describe('App states', () => {
     app.validateSchemaInput();
     app.submit();
 
-    http.expectOne('/api/jobs/batch').flush({
+    http.expectOne('/api/v1/extractions').flush({
+      extraction_id: 'ext-1',
       jobs: [
-        { id: 'job-a', status: 'queued', progress: 0, file_name: 'kalyan.pdf' },
-        { id: 'job-b', status: 'queued', progress: 0, file_name: 'bangalore.pdf' },
+        { id: 'job-a', extraction_id: 'ext-1', status: 'queued', progress: 0, file_name: 'kalyan.pdf' },
+        { id: 'job-b', extraction_id: 'ext-1', status: 'queued', progress: 0, file_name: 'bangalore.pdf' },
       ],
       rejected: [],
       accepted_count: 2,
@@ -347,10 +342,10 @@ describe('App states', () => {
     expect(app.batchJobs().length).toBe(2);
     expect(app.activeJob()?.id).toBe('job-a');
 
-    http.expectOne('/api/jobs/job-a').flush({ id: 'job-a', status: 'completed', progress: 100, file_name: 'kalyan.pdf', result: { data: { trainName: 'UDAYAN EXP', trainNumber: 11302 } } });
-    http.expectOne('/api/jobs?limit=20').flush([]);
-    http.expectOne('/api/jobs/job-b').flush({ id: 'job-b', status: 'completed', progress: 100, file_name: 'bangalore.pdf', result: { data: { trainName: 'UDAYAN EXP', trainNumber: 11301 } } });
-    http.expectOne('/api/jobs?limit=20').flush([]);
+    http.expectOne('/api/v1/extractions/ext-1').flush([
+      { id: 'job-a', extraction_id: 'ext-1', status: 'completed', progress: 100, file_name: 'kalyan.pdf', result: { data: { trainName: 'UDAYAN EXP', trainNumber: 11302 } } },
+      { id: 'job-b', extraction_id: 'ext-1', status: 'completed', progress: 100, file_name: 'bangalore.pdf', result: { data: { trainName: 'UDAYAN EXP', trainNumber: 11301 } } },
+    ]);
 
     expect(app.batchFinishedCount()).toBe(2);
     expect(app.batchCombined().map((item) => item.file)).toEqual(['kalyan.pdf', 'bangalore.pdf']);
@@ -370,19 +365,21 @@ describe('App states', () => {
     app.validateSchemaInput();
     app.submit();
 
-    http.expectOne('/api/jobs/batch').flush({
+    http.expectOne('/api/v1/extractions').flush({
+      extraction_id: 'ext-1',
       jobs: [
-        { id: 'job-a', status: 'queued', progress: 0, file_name: 'one.pdf' },
-        { id: 'job-b', status: 'queued', progress: 0, file_name: 'two.pdf' },
+        { id: 'job-a', extraction_id: 'ext-1', status: 'queued', progress: 0, file_name: 'one.pdf' },
+        { id: 'job-b', extraction_id: 'ext-1', status: 'queued', progress: 0, file_name: 'two.pdf' },
       ],
       rejected: [],
       accepted_count: 2,
       rejected_count: 0,
     });
 
-    http.expectOne('/api/jobs/job-a').flush({ id: 'job-a', status: 'processing', progress: 40, file_name: 'one.pdf' });
-    http.expectOne('/api/jobs/job-b').flush({ id: 'job-b', status: 'completed', progress: 100, file_name: 'two.pdf', result: { data: { trainNumber: 11301 } } });
-    http.expectOne('/api/jobs?limit=20').flush([]);
+    http.expectOne('/api/v1/extractions/ext-1').flush([
+      { id: 'job-a', extraction_id: 'ext-1', status: 'processing', progress: 40, file_name: 'one.pdf' },
+      { id: 'job-b', extraction_id: 'ext-1', status: 'completed', progress: 100, file_name: 'two.pdf', result: { data: { trainNumber: 11301 } } },
+    ]);
 
     expect(app.activeJob()?.id).toBe('job-a');
     expect(app.batchJobs()[1].status).toBe('completed');
@@ -397,7 +394,6 @@ describe('App states', () => {
     ]);
     fixture.detectChanges();
     http.expectOne('/api/health');
-    http.expectOne('/api/jobs?limit=20');
 
     // collapsed by default: only the file names are listed, no values on screen
     const items = fixture.nativeElement.querySelectorAll('.result-item');
@@ -414,33 +410,6 @@ describe('App states', () => {
     expect(JSON.parse(open[0].textContent)).toEqual({ trainName: 'UDAYAN EXPRESS', trainNumber: 11302 });
   });
 
-  it('restores the whole batch board when a batch job is reopened after a reload', () => {
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance;
-
-    app.openJob({ id: 'job-b', status: 'completed', progress: 100 });
-    http.expectOne('/api/jobs/job-b').flush({ id: 'job-b', batch_id: 'batch-1', status: 'completed', progress: 100, file_name: 'bangalore.pdf', result: { data: { trainNumber: 11301 } } });
-    http.expectOne('/api/batches/batch-1').flush([
-      { id: 'job-a', batch_id: 'batch-1', status: 'completed', progress: 100, file_name: 'kalyan.pdf', result: { data: { trainNumber: 11302 } } },
-      { id: 'job-b', batch_id: 'batch-1', status: 'completed', progress: 100, file_name: 'bangalore.pdf', result: { data: { trainNumber: 11301 } } },
-    ]);
-
-    expect(app.batchJobs().length).toBe(2);
-    expect(app.activeJob()?.id).toBe('job-b');
-    expect(app.batchCombined().map((item) => item.file)).toEqual(['kalyan.pdf', 'bangalore.pdf']);
-  });
-
-  it('shows only the single job when it was not part of a batch', () => {
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance;
-    app.batchJobs.set([{ id: 'old-a', status: 'completed', progress: 100 }, { id: 'old-b', status: 'completed', progress: 100 }]);
-
-    app.openJob({ id: 'solo', status: 'completed', progress: 100 });
-    http.expectOne('/api/jobs/solo').flush({ id: 'solo', status: 'completed', progress: 100, file_name: 'solo.pdf', result: {} });
-
-    expect(app.batchJobs()).toEqual([]);
-  });
-
   it('queues a second batch under the running one without restarting it', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance;
@@ -450,29 +419,31 @@ describe('App states', () => {
     app.validateSchemaInput();
     app.submit();
 
-    http.expectOne('/api/jobs/batch').flush({
-      batch_id: 'batch-1',
+    http.expectOne('/api/v1/extractions').flush({
+      extraction_id: 'batch-1',
       jobs: [
-        { id: 'job-a', batch_id: 'batch-1', status: 'queued', progress: 0, file_name: 'one.pdf' },
-        { id: 'job-b', batch_id: 'batch-1', status: 'queued', progress: 0, file_name: 'two.pdf' },
+        { id: 'job-a', extraction_id: 'batch-1', status: 'queued', progress: 0, file_name: 'one.pdf' },
+        { id: 'job-b', extraction_id: 'batch-1', status: 'queued', progress: 0, file_name: 'two.pdf' },
       ],
       rejected: [],
       accepted_count: 2,
       rejected_count: 0,
     });
-    http.expectOne('/api/jobs/job-a').flush({ id: 'job-a', batch_id: 'batch-1', status: 'processing', progress: 45, file_name: 'one.pdf' });
-    http.expectOne('/api/jobs/job-b').flush({ id: 'job-b', batch_id: 'batch-1', status: 'processing', progress: 30, file_name: 'two.pdf' });
+    http.expectOne('/api/v1/extractions/batch-1').flush([
+      { id: 'job-a', extraction_id: 'batch-1', status: 'processing', progress: 45, file_name: 'one.pdf' },
+      { id: 'job-b', extraction_id: 'batch-1', status: 'processing', progress: 30, file_name: 'two.pdf' },
+    ]);
 
     // the composer is empty again, so already-submitted PDFs cannot be re-uploaded
     expect(app.selectedFiles()).toEqual([]);
 
     app.addFiles([new File(['c'], 'three.pdf', { type: 'application/pdf' })]);
     app.submit();
-    const second = http.expectOne('/api/jobs/batch');
+    const second = http.expectOne('/api/v1/extractions');
     expect((second.request.body as FormData).getAll('files').length).toBe(1);
     second.flush({
-      batch_id: 'batch-2',
-      jobs: [{ id: 'job-c', batch_id: 'batch-2', status: 'queued', progress: 0, file_name: 'three.pdf' }],
+      extraction_id: 'batch-2',
+      jobs: [{ id: 'job-c', extraction_id: 'batch-2', status: 'queued', progress: 0, file_name: 'three.pdf' }],
       rejected: [],
       accepted_count: 1,
       rejected_count: 0,
@@ -487,8 +458,16 @@ describe('App states', () => {
     // and the panel keeps showing the job that is still running
     expect(app.activeJob()?.id).toBe('job-a');
 
-    // every earlier job is still polled, so its progress keeps moving
-    http.expectOne('/api/jobs/job-c').flush({ id: 'job-c', batch_id: 'batch-2', status: 'queued', progress: 0, file_name: 'three.pdf' });
+    // both extractions keep polling, so the first batch's progress still moves
+    http.expectOne('/api/v1/extractions/batch-1').flush([
+      { id: 'job-a', extraction_id: 'batch-1', status: 'processing', progress: 60, file_name: 'one.pdf' },
+      { id: 'job-b', extraction_id: 'batch-1', status: 'processing', progress: 55, file_name: 'two.pdf' },
+    ]);
+    http.expectOne('/api/v1/extractions/batch-2').flush([
+      { id: 'job-c', extraction_id: 'batch-2', status: 'queued', progress: 0, file_name: 'three.pdf' },
+    ]);
+    expect(app.batchJobs().map((job) => job.id)).toEqual(['job-a', 'job-b', 'job-c']);
+    expect(app.batchJobs()[0].progress).toBe(60);
     fixture.destroy();
   });
 
@@ -511,18 +490,19 @@ describe('App states', () => {
     expect(app.columns()).toEqual(['trainName', 'trainNumber']);
 
     app.submit();
-    const request = http.expectOne('/api/jobs/batch');
+    const request = http.expectOne('/api/v1/extractions');
     expect(JSON.parse((request.request.body as FormData).get('output_template') as string)).toEqual({
       type: 'object',
       properties: { trainName: { type: 'string' }, trainNumber: { type: 'number' } },
     });
-    request.flush({ batch_id: 'b1', jobs: [{ id: 'j1', batch_id: 'b1', status: 'queued', progress: 0, file_name: 'train.pdf' }], rejected: [], accepted_count: 1, rejected_count: 0 });
+    request.flush({ extraction_id: 'b1', jobs: [{ id: 'j1', extraction_id: 'b1', status: 'queued', progress: 0, file_name: 'train.pdf' }], rejected: [], accepted_count: 1, rejected_count: 0 });
 
     // the setup panel folds away so the results own the screen
     expect(app.setupOpen()).toBe(false);
 
-    http.expectOne('/api/jobs/j1').flush({ id: 'j1', batch_id: 'b1', status: 'completed', progress: 100, file_name: 'train.pdf', result: { data: { trainName: 'UDYAN EXPRESS', trainNumber: 11301 } } });
-    http.expectOne('/api/jobs?limit=20').flush([]);
+    http.expectOne('/api/v1/extractions/b1').flush([
+      { id: 'j1', extraction_id: 'b1', status: 'completed', progress: 100, file_name: 'train.pdf', result: { data: { trainName: 'UDYAN EXPRESS', trainNumber: 11301 } } },
+    ]);
 
     expect(app.cellValue(app.tableJobs()[0], 'trainNumber')).toBe('11301');
     expect(app.statusLabel(app.tableJobs()[0])).toBe('Done');
@@ -547,7 +527,6 @@ describe('App states', () => {
     app.apiKey.set('');
     fixture.detectChanges();
     http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, require_api_key: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'm', vision_model: 'm', ocr_model: 'm' });
-    http.expectOne('/api/jobs?limit=20').flush([]);
     fixture.detectChanges();
 
     expect(app.needsApiKey()).toBe(true);
@@ -558,7 +537,6 @@ describe('App states', () => {
     expect(app.apiKey()).toBe('ps_live_test123456');
     expect(app.maskedApiKey()).toBe('ps_live_test12…');
     http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, require_api_key: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'm', vision_model: 'm', ocr_model: 'm' });
-    http.expectOne('/api/jobs?limit=20').flush([]);
     fixture.detectChanges();
 
     expect(app.needsApiKey()).toBe(false);
@@ -574,50 +552,25 @@ describe('App states', () => {
     app.apiKey.set('ps_live_stale');
     expect(app.needsApiKey()).toBe(false);
 
-    app.loadRecentJobs();
-    http.expectOne('/api/jobs?limit=20').flush({ detail: 'revoked' }, { status: 401, statusText: 'Unauthorized' });
+    // a revoked key shows up on the next poll
+    app.addFiles([new File(['a'], 'one.pdf', { type: 'application/pdf' })]);
+    app.outputTemplate = VALID_SCHEMA;
+    app.validateSchemaInput();
+    app.submit();
+    http.expectOne('/api/v1/extractions').flush({
+      extraction_id: 'ext-1',
+      jobs: [{ id: 'job-a', extraction_id: 'ext-1', status: 'queued', progress: 0, file_name: 'one.pdf' }],
+      rejected: [],
+      accepted_count: 1,
+      rejected_count: 0,
+    });
+    http.expectOne('/api/v1/extractions/ext-1').flush(
+      { detail: 'revoked' },
+      { status: 401, statusText: 'Unauthorized' },
+    );
 
     expect(app.needsApiKey()).toBe(true);
     app.clearApiKey();
-  });
-
-  it('brings the last batch back after a page reload', () => {
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance;
-    fixture.detectChanges();
-    http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'm', vision_model: 'm', ocr_model: 'm' });
-
-    // a fresh page load only knows what the registry returns
-    http.expectOne('/api/jobs?limit=20').flush([
-      { id: 'job-b', batch_id: 'batch-1', status: 'completed', progress: 100, file_name: 'b.pdf', output_template: VALID_SCHEMA, result: { data: { total: '20' } } },
-      { id: 'job-a', batch_id: 'batch-1', status: 'completed', progress: 100, file_name: 'a.pdf', result: { data: { total: '10' } } },
-    ]);
-    http.expectOne('/api/batches/batch-1').flush([
-      { id: 'job-a', batch_id: 'batch-1', status: 'completed', progress: 100, file_name: 'a.pdf', result: { data: { total: '10' } } },
-      { id: 'job-b', batch_id: 'batch-1', status: 'completed', progress: 100, file_name: 'b.pdf', result: { data: { total: '20' } } },
-    ]);
-    fixture.detectChanges();
-
-    // both files are listed again, and the schema that produced them is back in the editor
-    expect(app.tableJobs().map((job) => job.id)).toEqual(['job-a', 'job-b']);
-    expect(app.setupOpen()).toBe(false);
-    expect(app.outputTemplate).toBe(VALID_SCHEMA);
-    expect(fixture.nativeElement.querySelectorAll('.result-item').length).toBe(2);
-    // rows stay collapsed until the user opens one
-    expect(fixture.nativeElement.querySelector('.json-view')).toBeNull();
-  });
-
-  it('leaves the empty state alone when there is no history to restore', () => {
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance;
-    fixture.detectChanges();
-    http.expectOne('/api/health').flush({ status: 'ok', ai_configured: true, max_upload_mb: 200, max_pdf_pages: 40, text_model: 'm', vision_model: 'm', ocr_model: 'm' });
-    http.expectOne('/api/jobs?limit=20').flush([]);
-    fixture.detectChanges();
-
-    expect(app.tableJobs()).toEqual([]);
-    expect(app.setupOpen()).toBe(true);
-    expect(fixture.nativeElement.textContent).toContain('No results yet');
   });
 
   it('renders a specific rejection near the submit action', () => {
@@ -625,7 +578,6 @@ describe('App states', () => {
     fixture.componentInstance.submitError = 'PDF rejected: 41 pages detected. Maximum allowed is 40 pages.';
     fixture.detectChanges();
     http.expectOne('/api/health');
-    http.expectOne('/api/jobs?limit=20');
     expect(fixture.nativeElement.querySelector('.submit-error').textContent).toContain('Maximum allowed is 40 pages');
   });
 });

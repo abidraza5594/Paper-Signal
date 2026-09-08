@@ -208,23 +208,5 @@
     }
   </section>
 
-  <details class="card history">
-    <summary><span>Earlier jobs</span><button type="button" class="link" (click)="$event.preventDefault(); $event.stopPropagation(); loadRecentJobs()">Refresh</button></summary>
-    @if (recentLoading()) { <p class="history-note">Loading…</p> }
-    @else if (recentError()) { <p class="history-note">History is unavailable. Connect the backend to see past jobs.</p> }
-    @else if (!recentJobs().length) { <p class="history-note">No jobs yet.</p> }
-    @else {
-      <ul class="history-list">
-        @for (job of recentJobs(); track job.id) {
-          <li>
-            <button type="button" class="history-open" (click)="openJob(job)"><span class="file-name">{{ filename(job) }}</span><small>{{ formatTime(job.created_at || job.updated_at) }}</small></button>
-            <span class="pill" [class.done]="job.status === 'completed'" [class.failed]="job.status === 'failed'" [class.run]="job.status === 'processing'" [class.wait]="job.status === 'queued'">{{ statusLabel(job) }}</span>
-            <button type="button" class="chip-x" [disabled]="job.status === 'processing'" [attr.aria-label]="'Delete ' + filename(job)" (click)="deleteJob($event, job)">&times;</button>
-          </li>
-        }
-      </ul>
-    }
-  </details>
-
   <footer class="foot">Files stay on this machine. Page content is sent to the AI service only when a page needs it.</footer>
 </main>

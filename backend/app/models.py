@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def utc_now_iso() -> str:
@@ -104,8 +104,11 @@ class JobRecord(BaseModel):
 
 
 class JobPublic(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    # Stored as batch_id; exposed as extraction_id so the field matches the endpoint.
     id: str
-    batch_id: str | None
+    batch_id: str | None = Field(serialization_alias="extraction_id")
     file_name: str
     file_size: int
     instruction: str
@@ -136,6 +139,10 @@ class JobPublic(BaseModel):
     def from_record(cls, record: JobRecord) -> "JobPublic":
         return cls(**record.model_dump(exclude={"file_path"}))
 
+    def model_dump(self, **kwargs):  # type: ignore[override]
+        kwargs.setdefault("by_alias", True)
+        return super().model_dump(**kwargs)
+
 
 class BatchFileRejection(BaseModel):
     file_name: str
@@ -143,7 +150,9 @@ class BatchFileRejection(BaseModel):
 
 
 class BatchJobResponse(BaseModel):
-    batch_id: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    batch_id: str = Field(serialization_alias="extraction_id")
     jobs: list[JobPublic] = Field(default_factory=list)
     rejected: list[BatchFileRejection] = Field(default_factory=list)
     accepted_count: int = Field(ge=0)

@@ -29,7 +29,7 @@ export interface BatchRejection {
 }
 
 export interface BatchResponse {
-  batch_id?: string;
+  extraction_id?: string;
   jobs: PdfJob[];
   rejected: BatchRejection[];
   accepted_count: number;
@@ -56,7 +56,7 @@ export interface JobResult {
 
 export interface PdfJob {
   id: string;
-  batch_id?: string | null;
+  extraction_id?: string | null;
   status: JobStatus;
   progress: number;
   stage?: string;
@@ -204,8 +204,7 @@ export function validateJsonSchema(raw: string): string | null {
 export class App implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
   private pollTimer?: ReturnType<typeof setInterval>;
-  private pollingJobIds = new Set<string>();
-  private restoredOnLoad = false;
+  private pollingExtractionIds = new Set<string>();
 
   readonly health = signal<HealthResponse | null>(null);
   readonly healthLoading = signal(true);
@@ -217,9 +216,6 @@ export class App implements OnInit, OnDestroy {
   readonly submitting = signal(false);
   readonly uploadProgress = signal(0);
   readonly activeJob = signal<PdfJob | null>(null);
-  readonly recentJobs = signal<PdfJob[]>([]);
-  readonly recentLoading = signal(true);
-  readonly recentError = signal(false);
   readonly activeTab = signal<ResultTab>('data');
   readonly copied = signal(false);
   readonly batchSummary = signal<BatchResponse | null>(null);
@@ -267,13 +263,13 @@ export class App implements OnInit, OnDestroy {
     this.apiKeyDraft.set('');
     this.unauthorized.set(false);
     this.loadHealth();
-    this.loadRecentJobs();
   }
 
   clearApiKey(): void {
     storeApiKey('');
     this.apiKey.set('');
-    this.recentJobs.set([]);
+    this.batchJobs.set([]);
+    this.activeJob.set(null);
     this.unauthorized.set(false);
   }
 
@@ -344,7 +340,6 @@ export class App implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadHealth();
-    this.loadRecentJobs();
   }
 
   ngOnDestroy(): void {
@@ -364,47 +359,6 @@ export class App implements OnInit, OnDestroy {
         this.healthLoading.set(false);
       },
     });
-  }
-
-  loadRecentJobs(): void {
-    this.recentLoading.set(true);
-    this.recentError.set(false);
-    this.http.get<PdfJob[]>('/api/jobs?limit=20').subscribe({
-      next: (jobs) => {
-        this.recentJobs.set(jobs);
-        this.recentLoading.set(false);
-        if (!this.restoredOnLoad) {
-          this.restoredOnLoad = true;
-          this.restoreLastResults(jobs);
-        }
-      },
-      error: (error) => {
-        if (error?.status === 401) this.unauthorized.set(true);
-        this.recentError.set(true);
-        this.recentLoading.set(false);
-      },
-    });
-  }
-
-  /** After a page reload the results are gone from memory, so bring the last batch back. */
-  private restoreLastResults(jobs: PdfJob[]): void {
-    const latest = jobs[0];
-    if (!latest || this.batchJobs().length || this.activeJob()) return;
-
-    this.activeJob.set(latest);
-    this.setupOpen.set(false);
-    if (latest.output_template && !this.outputTemplate.trim()) {
-      this.outputTemplate = latest.output_template;
-      this.inputMode.set('advanced');
-      this.schemaError = validateJsonSchema(this.outputTemplate) ?? '';
-    }
-
-    if (latest.batch_id) {
-      this.loadBatch(latest.batch_id, latest);
-    } else {
-      this.batchJobs.set([latest]);
-      this.pollUnfinished([latest]);
-    }
   }
 
   onFileInput(event: Event): void {
@@ -479,7 +433,7 @@ export class App implements OnInit, OnDestroy {
     this.submitError = '';
     this.submitting.set(true);
     this.uploadProgress.set(0);
-    const request = new HttpRequest('POST', '/api/jobs/batch', data, { reportProgress: true });
+    const request = new HttpRequest('POST', '/api/v1/extractions', data, { reportProgress: true });
     this.http.request<BatchResponse>(request).subscribe({
       next: (event) => {
         if (event.type === HttpEventType.UploadProgress && event.total) {
@@ -497,11 +451,10 @@ export class App implements OnInit, OnDestroy {
             ...jobs.filter((job) => !batch.jobs.some((added) => added.id === job.id)),
             ...batch.jobs,
           ]);
-          batch.jobs.forEach((job) => this.upsertRecent(job));
           if (batch.jobs.length) {
             this.setupOpen.set(false);
             if (!this.isRunning(this.activeJob())) this.activeJob.set(batch.jobs[0]);
-            this.startPolling(batch.jobs.map((job) => job.id));
+            if (batch.extraction_id) this.startPolling(batch.extraction_id);
           }
         }
       },
@@ -512,61 +465,8 @@ export class App implements OnInit, OnDestroy {
     });
   }
 
-  openJob(job: PdfJob): void {
-    this.submitError = '';
-    this.http.get<PdfJob>(`/api/jobs/${job.id}`).subscribe({
-      next: (freshJob) => {
-        this.activeJob.set(freshJob);
-        this.activeTab.set('data');
-        this.expandedJobId.set(freshJob.id);
-        this.setupOpen.set(false);
-        if (this.batchJobs().some((item) => item.id === freshJob.id)) {
-          this.pollUnfinished(this.batchJobs());
-        } else if (this.batchJobs().some((item) => this.isRunning(item))) {
-          this.pollUnfinished([...this.batchJobs(), freshJob]);
-        } else if (freshJob.batch_id) {
-          this.loadBatch(freshJob.batch_id, freshJob);
-        } else {
-          this.batchJobs.set([]);
-          this.pollUnfinished([freshJob]);
-        }
-      },
-      error: (error) => (this.submitError = this.apiError(error, 'That job could not be reopened.')),
-    });
-  }
-
-  private loadBatch(batchId: string, fallback: PdfJob): void {
-    this.http.get<PdfJob[]>(`/api/batches/${batchId}`).subscribe({
-      next: (jobs) => {
-        this.batchJobs.set(jobs);
-        this.pollUnfinished(jobs);
-      },
-      error: () => {
-        this.batchJobs.set([]);
-        this.pollUnfinished([fallback]);
-      },
-    });
-  }
-
-  private pollUnfinished(jobs: PdfJob[]): void {
-    const pending = jobs.filter((job) => this.isRunning(job)).map((job) => job.id);
-    if (pending.length) this.startPolling(pending);
-    else if (!this.pollingJobIds.size) this.stopPolling();
-  }
-
   isRunning(job: PdfJob | null | undefined): boolean {
     return job?.status === 'queued' || job?.status === 'processing';
-  }
-
-  deleteJob(event: Event, job: PdfJob): void {
-    event.stopPropagation();
-    if (job.status === 'processing') return;
-    this.http.delete(`/api/jobs/${job.id}`).subscribe({
-      next: () => {
-        this.recentJobs.update((jobs) => jobs.filter((item) => item.id !== job.id));
-        if (this.activeJob()?.id === job.id) this.startNew();
-      },
-    });
   }
 
   startNew(): void {
@@ -895,37 +795,52 @@ export class App implements OnInit, OnDestroy {
     return files.reduce((total, file) => total + file.size, 0);
   }
 
-  private startPolling(ids: string | string[]): void {
-    const jobIds = Array.isArray(ids) ? ids : [ids];
-    jobIds.forEach((id) => this.pollingJobIds.add(id));
+  /** One request returns every document in an extraction, so poll per extraction. */
+  private startPolling(extractionId: string): void {
+    this.pollingExtractionIds.add(extractionId);
     if (!this.pollTimer) {
-      this.pollTimer = setInterval(() => this.pollingJobIds.forEach((id) => this.refreshJob(id)), 1500);
+      this.pollTimer = setInterval(() => this.refreshExtractions(), 1500);
     }
-    jobIds.forEach((id) => this.refreshJob(id));
+    this.refreshExtractions();
   }
 
-  private refreshJob(id: string): void {
-    this.http.get<PdfJob>(`/api/jobs/${id}`).subscribe({
-      next: (job) => {
-        if (this.activeJob()?.id === job.id) this.activeJob.set(job);
-        this.batchJobs.update((jobs) => jobs.map((item) => (item.id === job.id ? job : item)));
-        this.upsertRecent(job);
-        if (job.status === 'completed' || job.status === 'failed') {
-          this.pollingJobIds.delete(id);
-          if (!this.pollingJobIds.size) this.stopPolling();
-          this.loadRecentJobs();
-        }
-      },
-    });
+  private refreshExtractions(): void {
+    for (const id of [...this.pollingExtractionIds]) {
+      this.http.get<PdfJob[]>(`/api/v1/extractions/${id}`).subscribe({
+        next: (jobs) => {
+          // Merge, never replace: a second submission runs alongside the first,
+          // and its documents are appended below the ones already on the board.
+          this.batchJobs.update((current) => {
+            const fresh = new Map(jobs.map((job) => [job.id, job]));
+            const updated = current.map((job) => fresh.get(job.id) ?? job);
+            const known = new Set(updated.map((job) => job.id));
+            return [...updated, ...jobs.filter((job) => !known.has(job.id))];
+          });
+
+          const active = this.activeJob();
+          if (active) {
+            const refreshed = jobs.find((job) => job.id === active.id);
+            if (refreshed) this.activeJob.set(refreshed);
+          }
+
+          if (jobs.every((job) => !this.isRunning(job))) this.finishPolling(id);
+        },
+        error: (error) => {
+          if (error?.status === 401) this.unauthorized.set(true);
+          this.finishPolling(id);
+        },
+      });
+    }
+  }
+
+  private finishPolling(extractionId: string): void {
+    this.pollingExtractionIds.delete(extractionId);
+    if (!this.pollingExtractionIds.size) this.stopPolling();
   }
 
   private stopPolling(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = undefined;
-    this.pollingJobIds.clear();
-  }
-
-  private upsertRecent(job: PdfJob): void {
-    this.recentJobs.update((jobs) => [job, ...jobs.filter((item) => item.id !== job.id)].slice(0, 20));
+    this.pollingExtractionIds.clear();
   }
 }

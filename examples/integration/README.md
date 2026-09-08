@@ -37,7 +37,7 @@ Edit the supplied invoice schema to match your required fields. Never set multip
 
 ## Integrate into an application
 
-Move the upload and poll operations into your backend/background worker; keep your own user request short. Persist the returned ID, verify the key's limits through `/api/usage`, and coordinate polling across callers. A single three-second polling stream uses roughly 20 requests/minute. For many jobs, use the batch or multi-ID polling API described in [the API guide](../../docs/API_INTEGRATION.md).
+Move the upload and poll operations into your backend/background worker; keep your own user request short. Persist the returned ID, verify the key's limits through `/api/v1/account`, and coordinate polling across callers. A single three-second polling stream uses roughly 20 requests/minute. For many jobs, use the batch or multi-ID polling API described in [the API guide](../../docs/API_INTEGRATION.md).
 
 Validate returned values before saving or triggering business actions. A client timeout does not cancel the job. Upload timeouts/lost responses may leave accepted work; reconcile before retrying because there is no idempotency support. Non-2xx errors need handling, and successful HTTP polling can still report a failed job.
 

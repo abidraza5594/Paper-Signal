@@ -6,7 +6,7 @@ Reviewed 8 September 2026. API version: `0.1.0`. Audience: developers integratin
 
 ## 1. Can another application use this service
 
-**Yes.** Your application's backend can call PaperSignal over HTTPS without installing its Angular frontend. Upload PDFs and a JSON Schema, save the returned job IDs, poll their status, and consume `result.data`. Each application can have a dedicated API key with its own job ownership, request limit and document quota.
+**Yes.** Your application's backend can call PaperSignal over HTTPS without installing its Angular frontend. Upload PDFs and a JSON Schema, save the returned extraction ID, poll it, and consume `result.data`. Each application can have a dedicated API key with its own document ownership, request limit and document quota.
 
 Recommended flow:
 
@@ -60,17 +60,11 @@ Client-key authentication applies in service mode. Admin operations use only `X-
 | Method and path | Auth | Success | Purpose |
 |---|---|---|---|
 | `GET /api/health` | Public | 200 object | Configuration and upload limits |
-| `POST /api/jobs` | Client key | 202 job | Submit one PDF |
-| `POST /api/jobs/batch` | Client key | 202 submission | Submit multiple PDFs with one schema |
-| `GET /api/jobs/{job_id}` | Client key | 200 job | One job's status and result |
-| `GET /api/batches/{batch_id}` | Client key | 200 job array | All visible jobs in a batch |
-| `GET /api/jobs/batch?ids=id1,id2` | Client key | 200 job array | Up to 50 supplied job IDs |
-| `GET /api/jobs?limit=20` | Client key | 200 job array | Recent jobs |
-| `DELETE /api/jobs/{job_id}` | Client key | 204 empty | Delete a job and local PDF |
-| `GET /api/usage` | Client key | 200 usage | Monthly quota and request limit |
-| `POST /api/admin/keys` | Admin token | 201 creation | Issue a client key |
-| `GET /api/admin/keys` | Admin token | 200 key array | List metadata and usage |
-| `DELETE /api/admin/keys/{key_id}` | Admin token | 204 empty | Revoke a key |
+| `POST /api/v1/extractions` | Client key | 202 submission | Send one or more PDFs with one schema |
+| `GET /api/v1/extractions/{extraction_id}` | Client key | 200 document array | Status and results for every document |
+| `DELETE /api/v1/extractions/{extraction_id}` | Client key | 204 empty | Delete the PDFs and their results |
+| `GET /api/v1/account` | Client key | 200 usage | Monthly quota and request limit |
+| `POST /api/v1/keys` | Admin token | 201 creation | Issue a client key |
 
 ## 5. Health and limits
 
@@ -97,7 +91,7 @@ Other source defaults, not exposed by health: 10 worker threads, 100 running-plu
 
 ## 6. Submit one PDF or a batch
 
-`POST /api/jobs` accepts multipart form data:
+`POST /api/v1/extractions` accepts multipart form data:
 
 | Field | Required | Value |
 |---|---|---|
@@ -107,15 +101,15 @@ Other source defaults, not exposed by health: 10 worker threads, 100 running-plu
 
 Send actual file bytes, not a URL or base64 JSON. Let the HTTP client set the multipart Content-Type and boundary. There is no custom instruction request field; describe required fields in the schema.
 
-The 202 response is a full job with initial `status: "queued"`, `progress: 0`, `stage: "Queued"`, `result: null` and `batch_id: null`. It is not the extraction result. File signature, emptiness, readability, password protection, size and page-count errors return 400. Schema/form errors return 422.
+The 202 response contains an `extraction_id` and one entry per document, each with `status: "queued"`, `progress: 0`, `stage: "Queued"` and `result: null`. It is not the extraction result. File signature, emptiness, readability, password protection, size and page-count errors return 400. Schema/form errors return 422.
 
-`POST /api/jobs/batch` uses the same fields except **repeat `files` for every PDF**, not `file` or `files[]`. One schema applies to the entire batch; each PDF has a separate result. File-count, schema and quota errors reject the request. Too much combined data returns 413. Quota is prechecked against all submitted files, including files that might later prove invalid.
+**Repeat `files` for every PDF**, not `file` or `files[]`. One schema applies to the entire batch; each PDF has a separate result. File-count, schema and quota errors reject the request. Too much combined data returns 413. Quota is prechecked against all submitted files, including files that might later prove invalid.
 
 Illustrative abbreviated batch response for two submitted files; job fields omitted for readability:
 
 ```json
 {
-  "batch_id": "example-batch-id",
+  "extraction_id": "example-extraction-id",
   "jobs": [
     {"id": "example-job-id", "file_name": "invoice.pdf", "status": "queued", "result": null}
   ],
@@ -138,25 +132,25 @@ These use Bash syntax. For Windows PowerShell, use the supplied Python/Node clie
 ```bash
 BASE="https://papersignal.duckdns.org"
 
-curl --fail-with-body "$BASE/api/usage" \
+curl --fail-with-body "$BASE/api/v1/account" \
   -H "X-API-Key: $PAPERSIGNAL_API_KEY"
 
-curl --fail-with-body "$BASE/api/jobs" \
+curl --fail-with-body "$BASE/api/v1/extractions" \
   -H "X-API-Key: $PAPERSIGNAL_API_KEY" \
   -F 'file=@invoice.pdf;type=application/pdf' \
   -F 'output_template=<invoice.schema.json' \
   -F 'ocr_mode=auto'
 
-curl --fail-with-body "$BASE/api/jobs/batch" \
+curl --fail-with-body "$BASE/api/v1/extractions" \
   -H "X-API-Key: $PAPERSIGNAL_API_KEY" \
   -F 'files=@invoice-a.pdf;type=application/pdf' \
   -F 'files=@invoice-b.pdf;type=application/pdf' \
   -F 'output_template=<invoice.schema.json'
 
-curl --fail-with-body "$BASE/api/jobs/<job_id>" \
+curl --fail-with-body "$BASE/api/v1/extractions/<extraction_id>" \
   -H "X-API-Key: $PAPERSIGNAL_API_KEY"
 
-curl --fail-with-body "$BASE/api/batches/<batch_id>" \
+curl --fail-with-body "$BASE/api/v1/extractions/<extraction_id>" \
   -H "X-API-Key: $PAPERSIGNAL_API_KEY"
 ```
 
@@ -194,17 +188,11 @@ Descriptions and selected constraints (`enum`, `format`, `minimum`, `maximum`, `
 
 ## 8. Polling and result contract
 
-`GET /api/jobs/{job_id}` returns one job, or 404 if missing/inaccessible.
-
-`GET /api/batches/{batch_id}` returns an array ordered by creation time and ID, with no batch wrapper, aggregate status or pagination. It returns 404 if no visible jobs remain. Match records by ID rather than array position.
-
-`GET /api/jobs/batch?ids=id1,id2` requires a nonempty comma-separated list with at most 50 supplied nonempty IDs. Duplicates are removed, input order retained, and missing/inaccessible jobs omitted. An empty result is `[]`, not 404. Compare returned IDs with requested IDs.
-
-`GET /api/jobs?limit=20` returns the key's most recent jobs, newest first. Integer limit defaults to 20 and is clamped to 1-100. There is no cursor, offset, total count or full-history export. All polling/list responses include the full result when available.
+`GET /api/v1/extractions/{extraction_id}` returns an array ordered by creation time and ID, with no wrapper, aggregate status or pagination. It returns 404 if no visible documents remain, including when the extraction belongs to another key. Match records by ID rather than array position.
 
 | Job field | Type and meaning |
 |---|---|
-| `id`, `batch_id` | Job ID; batch ID or null |
+| `id`, `extraction_id` | Document ID; the extraction it belongs to |
 | `file_name`, `file_size` | Sanitized display name; uploaded bytes |
 | `instruction` | Fixed instruction set by the service |
 | `output_template` | Submitted schema string, or null for legacy records |
@@ -248,7 +236,7 @@ Normal states are queued -> processing -> completed or failed. Both terminal sta
 
 ## 9. Usage and request budgets
 
-`GET /api/usage` needs no body/query. Example:
+`GET /api/v1/account` needs no body or query. Example:
 
 ```json
 {
@@ -271,11 +259,11 @@ Quota checking and increment are separate operations; concurrent uploads can exc
 
 ## 10. Delete and retention
 
-`DELETE /api/jobs/{job_id}` removes the local PDF and job/result record. Success is 204 with no body. Missing/inaccessible jobs return 404; jobs processing at the time of the check return 409.
+`DELETE /api/v1/extractions/{extraction_id}` removes every PDF in the extraction and its results. Success is 204 with no body. Missing or inaccessible extractions return 404; an extraction with a document still processing returns 409.
 
 ```bash
 # Run only after saving the result you need.
-curl --fail-with-body -X DELETE "$BASE/api/jobs/<job_id>" \
+curl --fail-with-body -X DELETE "$BASE/api/v1/extractions/<extraction_id>" \
   -H "X-API-Key: $PAPERSIGNAL_API_KEY"
 ```
 
@@ -287,7 +275,7 @@ The application does not schedule retention. Operator cleanup is available, but 
 
 Admin routes require `X-Admin-Token: <ADMIN_TOKEN>` over HTTPS. Never expose this token to consumer frontends. All admin routes return 503 if no server admin token is configured, or 401 for a wrong/missing token when configured.
 
-`POST /api/admin/keys` takes an application/json body:
+`POST /api/v1/keys` takes an application/json body:
 
 ```json
 {"name":"CRM production","rate_limit_per_minute":60,"monthly_document_quota":1000}
@@ -296,10 +284,6 @@ Admin routes require `X-Admin-Token: <ADMIN_TOKEN>` over HTTPS. Never expose thi
 Name is required, 1-120 characters; whitespace-only is rejected. Request limit is optional integer 1-10,000. Quota is optional integer 1-10,000,000. Omitted/null limits use server defaults. Invalid inputs return 422.
 
 201 returns `{"key":"<NEW_RAW_KEY>","api_key":{...}}`, where metadata has the fields shown inside usage above. The raw `ps_live_` key is returned once and stored only as a SHA-256 hash. Save it securely when issued.
-
-`GET /api/admin/keys` returns a newest-first array of metadata, including revoked keys and current-month usage. Raw keys are never returned by this list; no pagination.
-
-`DELETE /api/admin/keys/{key_id}` takes the metadata ID, not the raw key or display prefix. It returns 204, 404 if unknown, or 409 if already revoked. Subsequent API calls are blocked; accepted processing is not cancelled and files are not deleted. No update-limit, un-revoke, ownership-transfer or rotation endpoint exists.
 
 AWS operator CLI alternative, using the server's configured data directory:
 

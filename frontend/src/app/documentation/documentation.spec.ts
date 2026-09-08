@@ -19,8 +19,8 @@ describe('Developer documentation navigation', () => {
 
   it('supports direct endpoint links and keeps the correct auth context on navigation', async () => {
     const harness = await RouterTestingHarness.create();
-    await harness.navigateByUrl('/documentation/upload', Documentation);
-    expect(harness.routeNativeElement?.querySelector('.endpoint-bar')?.textContent).toContain('/api/jobs');
+    await harness.navigateByUrl('/documentation/submit', Documentation);
+    expect(harness.routeNativeElement?.querySelector('.endpoint-bar')?.textContent).toContain('/api/v1/extractions');
     await harness.navigateByUrl('/documentation/create-key', Documentation);
     expect(harness.routeNativeElement?.querySelector('.auth-line')?.textContent).toContain('X-Admin-Token');
     expect(harness.routeNativeElement?.querySelector('.endpoint-bar')?.textContent).toContain('201 Created');
@@ -29,7 +29,7 @@ describe('Developer documentation navigation', () => {
   it('filters reference topics by path and offers a useful empty state', async () => {
     const harness = await RouterTestingHarness.create();
     const component = await harness.navigateByUrl('/documentation', Documentation);
-    component.query.set('/api/admin/keys');
+    component.query.set('/api/v1/keys');
     harness.detectChanges();
     expect(component.groups().flatMap(group => group.pages).some(page => page.id === 'create-key')).toBe(true);
     component.query.set('zz-no-such-topic-zz');

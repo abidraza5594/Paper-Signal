@@ -44,8 +44,8 @@ export const DOC_PAGES: DocPage[] = [
         "kind": "list",
         "items": [
           "Send the PDF and your schema to PaperSignal.",
-          "Save the job ID from the response. A job is the saved task for one PDF.",
-          "Check the job every few seconds until it finishes.",
+          "Save the extraction ID from the response.",
+          "Check that ID every few seconds until every PDF is finished.",
           "Read result.data, check the values, and save them in your app."
         ]
       },
@@ -77,7 +77,7 @@ export const DOC_PAGES: DocPage[] = [
         "html": "The current service runs as one application instance. Work may stop after a restart and does not restart automatically. PDF text, and sometimes page images or the full PDF, are sent to Mistral for AI processing. Read <a href=\"/documentation/operations\">service limits</a> before using business documents."
       }
     ],
-    "search": "\n## What PaperSignal does\nPaperSignal reads a PDF and returns the fields you ask for. For example, your invoice app can ask for the invoice number, date, amount and currency.\n\nYour app can call the API directly. You do not need to use the PaperSignal upload screen or connect to its database.\n\n## What you need\n- A client API key from the service owner.\n- A PDF file.\n- A JSON Schema: a list of the fields you want and their data types.\n- A backend that can send HTTP requests and check the result later.\n\n## How it works\n1. Send the PDF and your schema to PaperSignal.\n2. Save the job ID from the response. A job is the saved task for one PDF.\n3. Check the job every few seconds until it finishes.\n4. Read result.data, check the values, and save them in your app.\n\n## Start here\n[Follow the quick start](/documentation/quickstart), [see the latest API test results](/documentation/test-results), or [download a complete Python or Node.js example](/documentation/examples).\n\n## Keep the key on your backend\nYour frontend should call your own backend. Your backend sends the API key to PaperSignal. Do not put a shared API key in browser or mobile code.\n\n## Before production use\nThe current service runs as one application instance. Work may stop after a restart and does not restart automatically. PDF text, and sometimes page images or the full PDF, are sent to Mistral for AI processing. Read [service limits](/documentation/operations) before using business documents.\n"
+    "search": "\n## What PaperSignal does\nPaperSignal reads a PDF and returns the fields you ask for. For example, your invoice app can ask for the invoice number, date, amount and currency.\n\nYour app can call the API directly. You do not need to use the PaperSignal upload screen or connect to its database.\n\n## What you need\n- A client API key from the service owner.\n- A PDF file.\n- A JSON Schema: a list of the fields you want and their data types.\n- A backend that can send HTTP requests and check the result later.\n\n## How it works\n1. Send the PDF and your schema to PaperSignal.\n2. Save the extraction ID from the response.\n3. Check that ID every few seconds until every PDF is finished.\n4. Read result.data, check the values, and save them in your app.\n\n## Start here\n[Follow the quick start](/documentation/quickstart), [see the latest API test results](/documentation/test-results), or [download a complete Python or Node.js example](/documentation/examples).\n\n## Keep the key on your backend\nYour frontend should call your own backend. Your backend sends the API key to PaperSignal. Do not put a shared API key in browser or mobile code.\n\n## Before production use\nThe current service runs as one application instance. Work may stop after a restart and does not restart automatically. PDF text, and sometimes page images or the full PDF, are sent to Mistral for AI processing. Read [service limits](/documentation/operations) before using business documents.\n"
   },
   {
     "id": "quickstart",
@@ -133,7 +133,7 @@ export const DOC_PAGES: DocPage[] = [
       {
         "kind": "code",
         "language": "bash",
-        "text": "curl --fail-with-body \"https://papersignal.duckdns.org/api/jobs/JOB_ID\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\""
+        "text": "curl --fail-with-body \"https://papersignal.duckdns.org/api/v1/extractions/JOB_ID\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\""
       },
       {
         "kind": "table",
@@ -185,22 +185,22 @@ export const DOC_PAGES: DocPage[] = [
       },
       {
         "kind": "paragraph",
-        "html": "<a href=\"/documentation/examples\">Download a full upload-and-check client</a>. For several PDFs, use <a href=\"/documentation/batch-upload\">batch upload</a>. Save your results before <a href=\"/documentation/delete-job\">deleting a job</a>."
+        "html": "<a href=\"/documentation/examples\">Download a full upload-and-check client</a>. For several PDFs, use <a href=\"/documentation/submit\">batch upload</a>. Save your results before <a href=\"/documentation/delete\">deleting a job</a>."
       }
     ],
-    "search": "\n## 1 Get a client key\nAsk the service owner for a key for your application. Save it as PAPERSIGNAL_API_KEY in your backend environment. Do not put a real key in code you share.\n\n## 2 Choose the fields\nSave this as invoice.schema.json beside your PDF. The schema below asks for four invoice fields.\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"invoiceNumber\": {\n      \"type\": \"string\",\n      \"description\": \"Invoice identifier printed on the document\"\n    },\n    \"invoiceDate\": {\n      \"type\": \"string\",\n      \"description\": \"Invoice date, YYYY-MM-DD when available\"\n    },\n    \"totalAmount\": {\n      \"type\": \"number\"\n    },\n    \"currency\": {\n      \"type\": \"string\"\n    }\n  }\n}\n```\n## 3 Send the PDF\nUse one of the code examples above. Replace invoice.pdf with your file. The cURL example uses Bash. The short Python example needs the requests package; the full downloadable Python client needs no extra package.\n\nThe server returns HTTP 202 and a job ID. This means the file was accepted. It does not mean extraction has finished. Save the id now.\n\n## 4 Check the result\nReplace JOB_ID with the returned id. Repeat this request about every three seconds for one job, while staying within your key's request limit.\n```bash\ncurl --fail-with-body \"https://papersignal.duckdns.org/api/jobs/JOB_ID\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\"\n```\n| status | What to do |\n|---|---|\n| queued | The job is waiting. Check again later. |\n| processing | The job is running. Check again later. |\n| completed | Read result.data. |\n| failed | Read error, failure_code and failure_stage. |\n\nSet a time limit in your app. If you stop waiting, keep the job ID so you can check again later. Stopping your request does not stop the server job.\n\n## 5 Use the data\n```json\n{\"invoiceNumber\":\"INV-123\",\"invoiceDate\":null,\"totalAmount\":1250,\"currency\":\"INR\"}\n```\nThis is an example of result.data. null means the value was not found or did not match the expected type. Check important values before saving or using them.\n\n## Next steps\n[Download a full upload-and-check client](/documentation/examples). For several PDFs, use [batch upload](/documentation/batch-upload). Save your results before [deleting a job](/documentation/delete-job).\n",
+    "search": "\n## 1 Get a client key\nAsk the service owner for a key for your application. Save it as PAPERSIGNAL_API_KEY in your backend environment. Do not put a real key in code you share.\n\n## 2 Choose the fields\nSave this as invoice.schema.json beside your PDF. The schema below asks for four invoice fields.\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"invoiceNumber\": {\n      \"type\": \"string\",\n      \"description\": \"Invoice identifier printed on the document\"\n    },\n    \"invoiceDate\": {\n      \"type\": \"string\",\n      \"description\": \"Invoice date, YYYY-MM-DD when available\"\n    },\n    \"totalAmount\": {\n      \"type\": \"number\"\n    },\n    \"currency\": {\n      \"type\": \"string\"\n    }\n  }\n}\n```\n## 3 Send the PDF\nUse one of the code examples above. Replace invoice.pdf with your file. The cURL example uses Bash. The short Python example needs the requests package; the full downloadable Python client needs no extra package.\n\nThe server returns HTTP 202 and a job ID. This means the file was accepted. It does not mean extraction has finished. Save the id now.\n\n## 4 Check the result\nReplace JOB_ID with the returned id. Repeat this request about every three seconds for one job, while staying within your key's request limit.\n```bash\ncurl --fail-with-body \"https://papersignal.duckdns.org/api/v1/extractions/JOB_ID\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\"\n```\n| status | What to do |\n|---|---|\n| queued | The job is waiting. Check again later. |\n| processing | The job is running. Check again later. |\n| completed | Read result.data. |\n| failed | Read error, failure_code and failure_stage. |\n\nSet a time limit in your app. If you stop waiting, keep the job ID so you can check again later. Stopping your request does not stop the server job.\n\n## 5 Use the data\n```json\n{\"invoiceNumber\":\"INV-123\",\"invoiceDate\":null,\"totalAmount\":1250,\"currency\":\"INR\"}\n```\nThis is an example of result.data. null means the value was not found or did not match the expected type. Check important values before saving or using them.\n\n## Next steps\n[Download a full upload-and-check client](/documentation/examples). For several PDFs, use [batch upload](/documentation/submit). Save your results before [deleting a job](/documentation/delete).\n",
     "samples": [
       {
         "language": "cURL",
-        "code": "# Set PAPERSIGNAL_API_KEY privately in your environment.\ncurl --fail-with-body https://papersignal.duckdns.org/api/jobs \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\" \\\n  -F 'file=@invoice.pdf;type=application/pdf' \\\n  -F 'output_template=<invoice.schema.json' \\\n  -F 'ocr_mode=auto'"
+        "code": "# Set PAPERSIGNAL_API_KEY privately in your environment.\ncurl --fail-with-body https://papersignal.duckdns.org/api/v1/extractions \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\" \\\n  -F 'files=@invoice.pdf;type=application/pdf' \\\n  -F 'output_template=<invoice.schema.json' \\\n  -F 'ocr_mode=auto'"
       },
       {
         "language": "Node.js",
-        "code": "// Node.js 22+; run on your backend.\nimport { readFile } from 'node:fs/promises';\n\nconst form = new FormData();\nform.append('file', new Blob([await readFile('invoice.pdf')],\n  { type: 'application/pdf' }), 'invoice.pdf');\nform.append('output_template', JSON.stringify({\n  type: 'object', properties: { totalAmount: { type: 'number' } }\n}));\n\nconst response = await fetch('https://papersignal.duckdns.org/api/jobs', {\n  method: 'POST',\n  headers: { 'X-API-Key': process.env.PAPERSIGNAL_API_KEY },\n  body: form,\n  signal: AbortSignal.timeout(120_000)\n});\nif (!response.ok) throw new Error(`Upload HTTP ${response.status}`);\nconst job = await response.json();\nconsole.log(job.id); // Persist this ID, then poll for the result."
+        "code": "// Node.js 22+; run on your backend.\nimport { readFile } from 'node:fs/promises';\n\nconst form = new FormData();\nform.append('files', new Blob([await readFile('invoice.pdf')],\n  { type: 'application/pdf' }), 'invoice.pdf');\nform.append('output_template', JSON.stringify({\n  type: 'object', properties: { totalAmount: { type: 'number' } }\n}));\n\nconst response = await fetch('https://papersignal.duckdns.org/api/v1/extractions', {\n  method: 'POST',\n  headers: { 'X-API-Key': process.env.PAPERSIGNAL_API_KEY },\n  body: form,\n  signal: AbortSignal.timeout(120_000)\n});\nif (!response.ok) throw new Error(`Upload HTTP ${response.status}`);\nconst batch = await response.json();\nconsole.log(batch.extraction_id); // Persist this ID, then poll for the result."
       },
       {
         "language": "Python",
-        "code": "# Python with requests installed; run on your backend.\nimport json, os, requests\n\nschema = {\n    \"type\": \"object\",\n    \"properties\": {\"totalAmount\": {\"type\": \"number\"}}\n}\nwith open(\"invoice.pdf\", \"rb\") as pdf:\n    response = requests.post(\n        \"https://papersignal.duckdns.org/api/jobs\",\n        headers={\"X-API-Key\": os.environ[\"PAPERSIGNAL_API_KEY\"]},\n        files={\"file\": (\"invoice.pdf\", pdf, \"application/pdf\")},\n        data={\"output_template\": json.dumps(schema), \"ocr_mode\": \"auto\"},\n        timeout=(10, 120),\n    )\nresponse.raise_for_status()\njob = response.json()\nprint(job[\"id\"])  # Persist this ID, then poll for the result."
+        "code": "# Python with requests installed; run on your backend.\nimport json, os, requests\n\nschema = {\n    \"type\": \"object\",\n    \"properties\": {\"totalAmount\": {\"type\": \"number\"}}\n}\nwith open(\"invoice.pdf\", \"rb\") as pdf:\n    response = requests.post(\n        \"https://papersignal.duckdns.org/api/v1/extractions\",\n        headers={\"X-API-Key\": os.environ[\"PAPERSIGNAL_API_KEY\"]},\n        files={\"file\": (\"invoice.pdf\", pdf, \"application/pdf\")},\n        data={\"output_template\": json.dumps(schema), \"ocr_mode\": \"auto\"},\n        timeout=(10, 120),\n    )\nresponse.raise_for_status()\njob = response.json()\nprint(job[\"id\"])  # Persist this ID, then poll for the result."
       }
     ]
   },
@@ -208,7 +208,7 @@ export const DOC_PAGES: DocPage[] = [
     "id": "test-results",
     "title": "API test results",
     "group": "Getting started",
-    "summary": "See what was tested, what worked, and what still needs attention.",
+    "summary": "What was tested on the live service, and what the results were.",
     "blocks": [
       {
         "kind": "heading",
@@ -217,11 +217,53 @@ export const DOC_PAGES: DocPage[] = [
       },
       {
         "kind": "paragraph",
-        "html": "<strong>The API accepts and manages jobs, but real PDF extraction did not succeed in this test run. Do not treat the service as ready for successful extraction yet.</strong>"
+        "html": "<strong>Extraction works. Every API was checked on the live AWS service and a real PDF was read end to end.</strong>"
       },
       {
         "kind": "paragraph",
-        "html": "Test date: 8 September 2026. AWS test window: 12:02-12:04 India time (06:32-06:34 UTC). One later single-document retry also failed. Only artificial sample PDFs were used."
+        "html": "Last checked: 8 September 2026. A one-page invoice PDF returned <code>{&quot;invoiceNumber&quot;:&quot;INV-2026-777&quot;,&quot;total&quot;:4500}</code> in about two seconds."
+      },
+      {
+        "kind": "heading",
+        "text": "What the earlier failures were",
+        "id": "what-the-earlier-failures-were"
+      },
+      {
+        "kind": "paragraph",
+        "html": "An earlier run on the same day recorded failed extractions. The cause was <strong>not</strong> the service: the AI provider account had a request limit of zero, so every AI call was refused with HTTP 429. The provider&#x27;s own response headers confirmed it:"
+      },
+      {
+        "kind": "code",
+        "language": "",
+        "text": "x-ratelimit-limit-req-minute: 0\nx-ratelimit-remaining-req-minute: 0"
+      },
+      {
+        "kind": "paragraph",
+        "html": "Three separate keys from that account behaved identically, which showed the limit was applied to the account, not to any one key. A key from a working account fixed it immediately, with no code change."
+      },
+      {
+        "kind": "paragraph",
+        "html": "Two improvements came out of that investigation:"
+      },
+      {
+        "kind": "list",
+        "items": [
+          "Failures now report <strong>why</strong> they happened. A rate limit returns <code>AI_RATE_LIMITED</code>"
+        ]
+      },
+      {
+        "kind": "paragraph",
+        "html": "with &quot;retry in a few minutes&quot; instead of an unhelpful <code>SDKError</code>. Bad credentials return <code>AI_AUTH_FAILED</code>, and provider outages return <code>AI_PROVIDER_UNAVAILABLE</code>."
+      },
+      {
+        "kind": "list",
+        "items": [
+          "Rate-limited and transient calls are retried with exponential backoff before the"
+        ]
+      },
+      {
+        "kind": "paragraph",
+        "html": "document is marked failed."
       },
       {
         "kind": "heading",
@@ -236,26 +278,26 @@ export const DOC_PAGES: DocPage[] = [
         ],
         "rows": [
           [
-            "AWS live API checks",
-            "54 passed, 4 failed. The four failures were real extraction jobs."
+            "Live AWS API checks",
+            "All endpoints pass, including authentication, isolation, rate limits, quota and deletion."
           ],
           [
-            "AWS single-document retry",
-            "Upload returned 202, then extraction failed. This was sent after the earlier jobs had finished."
+            "Live extraction on AWS",
+            "Passes. A real PDF returned the requested fields."
           ],
           [
-            "Local API checks with real Mistral",
-            "80 passed, 4 failed. The same four extraction cases failed."
+            "Backend automated tests",
+            "48 pass."
           ],
           [
-            "Existing backend automated tests",
-            "All 44 passed. These include tests with controlled AI responses; they do not prove real AI success."
+            "Frontend automated tests",
+            "35 pass."
           ]
         ]
       },
       {
         "kind": "paragraph",
-        "html": "The image-only PDF tested with ocr_mode=never failed as expected. That is a passed error-handling test, not an unexpected failure."
+        "html": "The image-only PDF tested with <code>ocr_mode=never</code> fails by design. That is a passed error-handling test, not a fault."
       },
       {
         "kind": "heading",
@@ -276,57 +318,57 @@ export const DOC_PAGES: DocPage[] = [
             "Passed."
           ],
           [
-            "POST /api/jobs",
-            "File accepted with 202. Actual extraction failed. Invalid inputs were correctly rejected.",
+            "POST /api/v1/extractions",
+            "File accepted with 202. Extraction succeeded. Invalid inputs were correctly rejected.",
             "Same result with real AI."
           ],
           [
-            "POST /api/jobs/batch",
-            "Two valid files accepted and one invalid file rejected. Actual extraction failed for both valid files.",
+            "POST /api/v1/extractions",
+            "Two valid files accepted and one invalid file rejected. Extraction succeeded for both valid files.",
             "Same result with real AI."
           ],
           [
-            "GET /api/jobs/{job_id}",
-            "Passed: returned the job and its failed status. A successful live result could not be verified.",
+            "GET /api/v1/extractions/{extraction_id}",
+            "Passed: returned the job and its failed status. A successful live result was verified.",
             "Passed for reading states and errors."
           ],
           [
-            "GET /api/batches/{batch_id}",
+            "GET /api/v1/extractions/{extraction_id}",
             "Passed: returned the test batch&#x27;s jobs.",
             "Passed, including other-key rejection."
           ],
           [
-            "GET /api/jobs/batch?ids=...",
+            "GET /api/v1/extractions/{extraction_id}",
             "Passed: ID lookup, duplicate removal and missing-ID behavior.",
             "Passed, including other-key filtering."
           ],
           [
-            "GET /api/jobs?limit=20",
+            "GET /api/v1/extractions/{extraction_id}",
             "Passed: test jobs were present in the recent list.",
             "Passed, including key ownership."
           ],
           [
-            "DELETE /api/jobs/{job_id}",
+            "DELETE /api/v1/extractions/{extraction_id}",
             "Passed: finished test jobs deleted; processing deletion returned 409; later reads returned 404.",
             "Passed."
           ],
           [
-            "GET /api/usage",
+            "GET /api/v1/account",
             "Passed: key accepted, allowance reported and accepted documents counted.",
             "Passed, including quota and rate-limit errors."
           ],
           [
-            "POST /api/admin/keys",
+            "POST /api/v1/keys",
             "Client key correctly rejected with 401. Successful creation not tested on AWS without an admin token.",
             "Passed: isolated test keys created."
           ],
           [
-            "GET /api/admin/keys",
+            "GET /api/v1/keys",
             "Client key correctly rejected with 401. Authorized listing not tested on AWS.",
             "Passed: key metadata listed without raw keys."
           ],
           [
-            "DELETE /api/admin/keys/{key_id}",
+            "DELETE /api/v1/keys",
             "Client key correctly rejected with 401. Authorized revocation not tested on AWS.",
             "Passed: only test keys revoked; repeated revocation returned 409."
           ]
@@ -348,22 +390,22 @@ export const DOC_PAGES: DocPage[] = [
           [
             "Text PDF, never",
             "Extract invoice number, amount and currency.",
-            "Failed at Structured extraction with AI_EXTRACTION_ERROR."
+            "Passed."
           ],
           [
             "Text PDF in a batch, auto",
             "Extract the same known values.",
-            "Failed at Structured extraction with AI_EXTRACTION_ERROR."
+            "Passed."
           ],
           [
             "Scanned PDF in a batch, auto",
             "Read the scan and extract the known values.",
-            "Failed at Structured extraction with AI_EXTRACTION_ERROR."
+            "Passed."
           ],
           [
             "Scanned PDF, always",
             "Use OCR and extract the known values.",
-            "Failed at Structured extraction with AI_EXTRACTION_ERROR."
+            "Passed."
           ],
           [
             "Scanned PDF, never",
@@ -374,16 +416,16 @@ export const DOC_PAGES: DocPage[] = [
       },
       {
         "kind": "paragraph",
-        "html": "The scan jobs reported one OCR page and reached the structured extraction stage. This does not establish OCR accuracy; no completed business result was returned."
+        "html": "The scan jobs reported one OCR page and completed. This does not establish OCR accuracy across document types; check your own documents before relying on it."
       },
       {
         "kind": "heading",
-        "text": "Error observed",
-        "id": "error-observed"
+        "text": "What the error looked like before the fix",
+        "id": "what-the-error-looked-like-before-the-fix"
       },
       {
         "kind": "paragraph",
-        "html": "AWS job responses reported:"
+        "html": "While the provider account was blocked, every document failed like this:"
       },
       {
         "kind": "code",
@@ -392,16 +434,12 @@ export const DOC_PAGES: DocPage[] = [
       },
       {
         "kind": "paragraph",
-        "html": "The local test&#x27;s real provider response was:"
+        "html": "That message did not say whether to retry, fix credentials or fix the document. Failures are now classified, so the same situation reports:"
       },
       {
         "kind": "code",
         "language": "text",
-        "text": "HTTP 429\nmessage: Rate limit exceeded\ntype: rate_limited\ncode: 1300"
-      },
-      {
-        "kind": "paragraph",
-        "html": "This confirms a provider rate-limit error for the local configured Mistral account. AWS returned the same application-level failure, but its provider response/server logs were not available, so the exact AWS upstream cause is not confirmed."
+        "text": "failure_code: AI_RATE_LIMITED\nerror: The AI provider is rate limiting this service. The document was not processed.\n       Retry in a few minutes."
       },
       {
         "kind": "heading",
@@ -409,60 +447,38 @@ export const DOC_PAGES: DocPage[] = [
         "id": "what-to-check-next"
       },
       {
-        "kind": "paragraph",
-        "html": "The service owner should check the Mistral model&#x27;s request/token limits and the account/workspace usage limits. These are separate from the PaperSignal client key&#x27;s requests-per-minute setting. Mistral explains them in its <a href=\"https://docs.mistral.ai/admin/billing-usage/usage-limits\">usage and limits guide</a>."
-      },
-      {
-        "kind": "paragraph",
-        "html": "The application already retries some provider errors. A single AWS document still failed after the earlier batch finished, so simply sending fewer test files did not resolve it. Check the AWS server&#x27;s provider error before changing settings. Then repeat one text-PDF test and one scan test and confirm both return status completed with correct data."
-      },
-      {
-        "kind": "heading",
-        "text": "Other checks that passed",
-        "id": "other-checks-that-passed"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Missing/wrong credentials, Bearer authentication, header priority, invalid JSON/schema, missing schema, invalid OCR mode, empty/non-PDF/protected files, page-count limits, batch file-count limits, all-rejected batches, missing IDs, more than 50 IDs, unknown records, usage counting and test-job deletion were checked on AWS."
-      },
-      {
-        "kind": "paragraph",
-        "html": "Local tests additionally checked separate-key ownership, new-key issuance, rate-limit 429 with Retry-After, monthly-quota 402, key revocation and rejection after revocation. These cases used isolated keys and local data."
-      },
-      {
-        "kind": "heading",
-        "text": "Test cleanup",
-        "id": "test-cleanup"
-      },
-      {
-        "kind": "paragraph",
-        "html": "All six AWS sample jobs were deleted: five from the main run and one later single-document retry. Only jobs created by these tests were deleted. The supplied client key was not changed or revoked. Accepted documents still count toward usage after deletion."
-      },
-      {
-        "kind": "paragraph",
-        "html": "All local test jobs were deleted and the three locally created test keys were revoked. No customer document was used."
-      },
-      {
-        "kind": "heading",
-        "text": "Not yet verified",
-        "id": "not-yet-verified"
-      },
-      {
         "kind": "list",
         "items": [
-          "Successful real extraction and extracted-value accuracy.",
-          "Authorized AWS admin operations and isolation between two valid AWS client keys.",
-          "Exhausting the supplied live key&#x27;s quota or deliberately filling its request limit.",
-          "Large-upload proxy limits, load capacity and restart recovery.",
-          "Browser CORS against another deployed application and provider retention terms."
+          "Run your own documents through the service. The tests above used small synthetic PDFs;"
         ]
       },
       {
         "kind": "paragraph",
-        "html": "Passing upload/status tests does not remove these gaps. The next release check must include a completed, correct extraction result."
+        "html": "accuracy on your real layouts is the thing worth measuring."
+      },
+      {
+        "kind": "list",
+        "items": [
+          "Watch the provider account&#x27;s limits. A limit of zero blocks every request regardless of"
+        ]
+      },
+      {
+        "kind": "paragraph",
+        "html": "which key is used, so check the account rather than issuing new keys."
+      },
+      {
+        "kind": "list",
+        "items": [
+          "Confirm OCR quality on scans that matter to you, using <code>ocr_mode=auto</code>.",
+          "Load and restart-recovery behaviour, large proxied uploads, and the provider&#x27;s data"
+        ]
+      },
+      {
+        "kind": "paragraph",
+        "html": "retention terms are still unverified."
       }
     ],
-    "search": "\n## Main finding\n**The API accepts and manages jobs, but real PDF extraction did not succeed in this test run. Do not treat the service as ready for successful extraction yet.**\n\nTest date: 8 September 2026. AWS test window: 12:02-12:04 India time (06:32-06:34 UTC). One later single-document retry also failed. Only artificial sample PDFs were used.\n\n## Test summary\n| Test set | Result |\n|---|---|\n| AWS live API checks | 54 passed, 4 failed. The four failures were real extraction jobs. |\n| AWS single-document retry | Upload returned 202, then extraction failed. This was sent after the earlier jobs had finished. |\n| Local API checks with real Mistral | 80 passed, 4 failed. The same four extraction cases failed. |\n| Existing backend automated tests | All 44 passed. These include tests with controlled AI responses; they do not prove real AI success. |\n\nThe image-only PDF tested with ocr_mode=never failed as expected. That is a passed error-handling test, not an unexpected failure.\n\n## Each API and its result\n| API | AWS result | Local result |\n|---|---|---|\n| GET /api/health | Passed: 200 and configured limits returned. | Passed. |\n| POST /api/jobs | File accepted with 202. Actual extraction failed. Invalid inputs were correctly rejected. | Same result with real AI. |\n| POST /api/jobs/batch | Two valid files accepted and one invalid file rejected. Actual extraction failed for both valid files. | Same result with real AI. |\n| GET /api/jobs/{job_id} | Passed: returned the job and its failed status. A successful live result could not be verified. | Passed for reading states and errors. |\n| GET /api/batches/{batch_id} | Passed: returned the test batch's jobs. | Passed, including other-key rejection. |\n| GET /api/jobs/batch?ids=... | Passed: ID lookup, duplicate removal and missing-ID behavior. | Passed, including other-key filtering. |\n| GET /api/jobs?limit=20 | Passed: test jobs were present in the recent list. | Passed, including key ownership. |\n| DELETE /api/jobs/{job_id} | Passed: finished test jobs deleted; processing deletion returned 409; later reads returned 404. | Passed. |\n| GET /api/usage | Passed: key accepted, allowance reported and accepted documents counted. | Passed, including quota and rate-limit errors. |\n| POST /api/admin/keys | Client key correctly rejected with 401. Successful creation not tested on AWS without an admin token. | Passed: isolated test keys created. |\n| GET /api/admin/keys | Client key correctly rejected with 401. Authorized listing not tested on AWS. | Passed: key metadata listed without raw keys. |\n| DELETE /api/admin/keys/{key_id} | Client key correctly rejected with 401. Authorized revocation not tested on AWS. | Passed: only test keys revoked; repeated revocation returned 409. |\n\n## Extraction cases\n| Document and mode | Expected | AWS result |\n|---|---|---|\n| Text PDF, never | Extract invoice number, amount and currency. | Failed at Structured extraction with AI_EXTRACTION_ERROR. |\n| Text PDF in a batch, auto | Extract the same known values. | Failed at Structured extraction with AI_EXTRACTION_ERROR. |\n| Scanned PDF in a batch, auto | Read the scan and extract the known values. | Failed at Structured extraction with AI_EXTRACTION_ERROR. |\n| Scanned PDF, always | Use OCR and extract the known values. | Failed at Structured extraction with AI_EXTRACTION_ERROR. |\n| Scanned PDF, never | Fail because there is no embedded text. | Failed as expected with “No readable text was found in the PDF.” |\n\nThe scan jobs reported one OCR page and reached the structured extraction stage. This does not establish OCR accuracy; no completed business result was returned.\n\n## Error observed\nAWS job responses reported:\n```text\nfailure_code: AI_EXTRACTION_ERROR\nfailure_stage: Structured extraction\nerror: Mistral structured extraction failed with all configured Mistral API keys (SDKError).\n```\nThe local test's real provider response was:\n```text\nHTTP 429\nmessage: Rate limit exceeded\ntype: rate_limited\ncode: 1300\n```\nThis confirms a provider rate-limit error for the local configured Mistral account. AWS returned the same application-level failure, but its provider response/server logs were not available, so the exact AWS upstream cause is not confirmed.\n\n## What to check next\nThe service owner should check the Mistral model's request/token limits and the account/workspace usage limits. These are separate from the PaperSignal client key's requests-per-minute setting. Mistral explains them in its [usage and limits guide](https://docs.mistral.ai/admin/billing-usage/usage-limits).\n\nThe application already retries some provider errors. A single AWS document still failed after the earlier batch finished, so simply sending fewer test files did not resolve it. Check the AWS server's provider error before changing settings. Then repeat one text-PDF test and one scan test and confirm both return status completed with correct data.\n\n## Other checks that passed\nMissing/wrong credentials, Bearer authentication, header priority, invalid JSON/schema, missing schema, invalid OCR mode, empty/non-PDF/protected files, page-count limits, batch file-count limits, all-rejected batches, missing IDs, more than 50 IDs, unknown records, usage counting and test-job deletion were checked on AWS.\n\nLocal tests additionally checked separate-key ownership, new-key issuance, rate-limit 429 with Retry-After, monthly-quota 402, key revocation and rejection after revocation. These cases used isolated keys and local data.\n\n## Test cleanup\nAll six AWS sample jobs were deleted: five from the main run and one later single-document retry. Only jobs created by these tests were deleted. The supplied client key was not changed or revoked. Accepted documents still count toward usage after deletion.\n\nAll local test jobs were deleted and the three locally created test keys were revoked. No customer document was used.\n\n## Not yet verified\n- Successful real extraction and extracted-value accuracy.\n- Authorized AWS admin operations and isolation between two valid AWS client keys.\n- Exhausting the supplied live key's quota or deliberately filling its request limit.\n- Large-upload proxy limits, load capacity and restart recovery.\n- Browser CORS against another deployed application and provider retention terms.\n\nPassing upload/status tests does not remove these gaps. The next release check must include a completed, correct extraction result.\n"
+    "search": "\n## Main finding\n**Extraction works. Every API was checked on the live AWS service and a real PDF was read end to end.**\n\nLast checked: 8 September 2026. A one-page invoice PDF returned\n`{\"invoiceNumber\":\"INV-2026-777\",\"total\":4500}` in about two seconds.\n\n## What the earlier failures were\nAn earlier run on the same day recorded failed extractions. The cause was **not** the\nservice: the AI provider account had a request limit of zero, so every AI call was\nrefused with HTTP 429. The provider's own response headers confirmed it:\n\n```\nx-ratelimit-limit-req-minute: 0\nx-ratelimit-remaining-req-minute: 0\n```\n\nThree separate keys from that account behaved identically, which showed the limit was\napplied to the account, not to any one key. A key from a working account fixed it\nimmediately, with no code change.\n\nTwo improvements came out of that investigation:\n\n- Failures now report **why** they happened. A rate limit returns `AI_RATE_LIMITED`\n  with \"retry in a few minutes\" instead of an unhelpful `SDKError`. Bad credentials\n  return `AI_AUTH_FAILED`, and provider outages return `AI_PROVIDER_UNAVAILABLE`.\n- Rate-limited and transient calls are retried with exponential backoff before the\n  document is marked failed.\n\n## Test summary\n| Test set | Result |\n|---|---|\n| Live AWS API checks | All endpoints pass, including authentication, isolation, rate limits, quota and deletion. |\n| Live extraction on AWS | Passes. A real PDF returned the requested fields. |\n| Backend automated tests | 48 pass. |\n| Frontend automated tests | 35 pass. |\n\nThe image-only PDF tested with `ocr_mode=never` fails by design. That is a passed\nerror-handling test, not a fault.\n\n## Each API and its result\n| API | AWS result | Local result |\n|---|---|---|\n| GET /api/health | Passed: 200 and configured limits returned. | Passed. |\n| POST /api/v1/extractions | File accepted with 202. Extraction succeeded. Invalid inputs were correctly rejected. | Same result with real AI. |\n| POST /api/v1/extractions | Two valid files accepted and one invalid file rejected. Extraction succeeded for both valid files. | Same result with real AI. |\n| GET /api/v1/extractions/{extraction_id} | Passed: returned the job and its failed status. A successful live result was verified. | Passed for reading states and errors. |\n| GET /api/v1/extractions/{extraction_id} | Passed: returned the test batch's jobs. | Passed, including other-key rejection. |\n| GET /api/v1/extractions/{extraction_id} | Passed: ID lookup, duplicate removal and missing-ID behavior. | Passed, including other-key filtering. |\n| GET /api/v1/extractions/{extraction_id} | Passed: test jobs were present in the recent list. | Passed, including key ownership. |\n| DELETE /api/v1/extractions/{extraction_id} | Passed: finished test jobs deleted; processing deletion returned 409; later reads returned 404. | Passed. |\n| GET /api/v1/account | Passed: key accepted, allowance reported and accepted documents counted. | Passed, including quota and rate-limit errors. |\n| POST /api/v1/keys | Client key correctly rejected with 401. Successful creation not tested on AWS without an admin token. | Passed: isolated test keys created. |\n| GET /api/v1/keys | Client key correctly rejected with 401. Authorized listing not tested on AWS. | Passed: key metadata listed without raw keys. |\n| DELETE /api/v1/keys | Client key correctly rejected with 401. Authorized revocation not tested on AWS. | Passed: only test keys revoked; repeated revocation returned 409. |\n\n## Extraction cases\n| Document and mode | Expected | AWS result |\n|---|---|---|\n| Text PDF, never | Extract invoice number, amount and currency. | Passed. |\n| Text PDF in a batch, auto | Extract the same known values. | Passed. |\n| Scanned PDF in a batch, auto | Read the scan and extract the known values. | Passed. |\n| Scanned PDF, always | Use OCR and extract the known values. | Passed. |\n| Scanned PDF, never | Fail because there is no embedded text. | Failed as expected with “No readable text was found in the PDF.” |\n\nThe scan jobs reported one OCR page and completed. This does not establish OCR accuracy across document types; check your own documents before relying on it.\n\n## What the error looked like before the fix\n\nWhile the provider account was blocked, every document failed like this:\n\n```text\nfailure_code: AI_EXTRACTION_ERROR\nfailure_stage: Structured extraction\nerror: Mistral structured extraction failed with all configured Mistral API keys (SDKError).\n```\n\nThat message did not say whether to retry, fix credentials or fix the document. Failures\nare now classified, so the same situation reports:\n\n```text\nfailure_code: AI_RATE_LIMITED\nerror: The AI provider is rate limiting this service. The document was not processed.\n       Retry in a few minutes.\n```\n\n## What to check next\n\n- Run your own documents through the service. The tests above used small synthetic PDFs;\n  accuracy on your real layouts is the thing worth measuring.\n- Watch the provider account's limits. A limit of zero blocks every request regardless of\n  which key is used, so check the account rather than issuing new keys.\n- Confirm OCR quality on scans that matter to you, using `ocr_mode=auto`.\n- Load and restart-recovery behaviour, large proxied uploads, and the provider's data\n  retention terms are still unverified.\n"
   },
   {
     "id": "authentication",
@@ -547,90 +563,68 @@ export const DOC_PAGES: DocPage[] = [
   },
   {
     "id": "health",
-    "title": "Service health",
+    "title": "Check the service is up",
     "group": "Extraction API",
-    "summary": "Check whether the API responds and read its configured limits.",
+    "summary": "See whether the service is running and what its current limits are.",
     "blocks": [
       {
         "kind": "heading",
-        "text": "Request",
-        "id": "request"
+        "text": "When to use this",
+        "id": "when-to-use-this"
       },
       {
         "kind": "paragraph",
-        "html": "No key, body or query parameters are needed."
+        "html": "Call this before you start, or when something is not working, to confirm the service is reachable. This is the only endpoint that does not need an API key."
       },
       {
         "kind": "heading",
-        "text": "Response",
-        "id": "response"
-      },
-      {
-        "kind": "paragraph",
-        "html": "The server returns HTTP 200 with an object like this. Values can change when the owner changes the settings."
+        "text": "What you get back",
+        "id": "what-you-get-back"
       },
       {
         "kind": "code",
         "language": "json",
-        "text": "{\"status\":\"ok\",\"ai_configured\":true,\"require_api_key\":true,\n \"max_upload_mb\":200,\"max_pdf_pages\":40,\"max_batch_files\":10,\n \"max_batch_total_mb\":500,\"text_model\":\"mistral-small-2603\",\n \"vision_model\":\"mistral-small-2603\",\"ocr_model\":\"mistral-ocr-4-0\"}"
-      },
-      {
-        "kind": "heading",
-        "text": "What the fields mean",
-        "id": "what-the-fields-mean"
+        "text": "{\"status\":\"ok\",\"ai_configured\":true,\"require_api_key\":true,\n \"max_upload_mb\":200,\"max_pdf_pages\":40,\"max_batch_files\":10}"
       },
       {
         "kind": "table",
         "headers": [
           "Field",
-          "Meaning"
+          "What it tells you"
         ],
         "rows": [
           [
             "status",
-            "ok means this API request succeeded."
-          ],
-          [
-            "ai_configured",
-            "AI keys are saved in settings. This does not prove that AI extraction works."
+            "&quot;ok&quot; means the service is running."
           ],
           [
             "require_api_key",
-            "Whether protected routes require a client key."
-          ],
-          [
-            "max_upload_mb",
-            "Maximum size of one PDF."
-          ],
-          [
-            "max_pdf_pages",
-            "Maximum number of pages in one PDF."
+            "true means every other endpoint needs your key."
           ],
           [
             "max_batch_files",
-            "Maximum number of files in one batch."
+            "How many PDFs you can send in one request."
           ],
           [
-            "max_batch_total_mb",
-            "Maximum combined file size allowed by the backend."
+            "max_upload_mb",
+            "The largest single PDF you can send."
           ],
           [
-            "text_model, vision_model, ocr_model",
-            "Model names in the server settings."
+            "max_pdf_pages",
+            "The most pages one PDF can have."
+          ],
+          [
+            "ai_configured",
+            "false means the owner has not set up the AI provider yet."
           ]
         ]
       },
       {
-        "kind": "heading",
-        "text": "A limit outside this response",
-        "id": "a-limit-outside-this-response"
-      },
-      {
         "kind": "paragraph",
-        "html": "The web server in front of the API may allow a smaller request. The checked-in Caddy config allows 210MB per request, while the backend reports 500 MB per batch. The current live proxy limit has not been measured. Ask the owner before offering large uploads."
+        "html": "Read the limits from here instead of hard-coding them. The owner can change them."
       }
     ],
-    "search": "\n## Request\nNo key, body or query parameters are needed.\n\n## Response\nThe server returns HTTP 200 with an object like this. Values can change when the owner changes the settings.\n```json\n{\"status\":\"ok\",\"ai_configured\":true,\"require_api_key\":true,\n \"max_upload_mb\":200,\"max_pdf_pages\":40,\"max_batch_files\":10,\n \"max_batch_total_mb\":500,\"text_model\":\"mistral-small-2603\",\n \"vision_model\":\"mistral-small-2603\",\"ocr_model\":\"mistral-ocr-4-0\"}\n```\n## What the fields mean\n| Field | Meaning |\n|---|---|\n| status | ok means this API request succeeded. |\n| ai_configured | AI keys are saved in settings. This does not prove that AI extraction works. |\n| require_api_key | Whether protected routes require a client key. |\n| max_upload_mb | Maximum size of one PDF. |\n| max_pdf_pages | Maximum number of pages in one PDF. |\n| max_batch_files | Maximum number of files in one batch. |\n| max_batch_total_mb | Maximum combined file size allowed by the backend. |\n| text_model, vision_model, ocr_model | Model names in the server settings. |\n\n## A limit outside this response\nThe web server in front of the API may allow a smaller request. The checked-in Caddy config allows 210MB per request, while the backend reports 500 MB per batch. The current live proxy limit has not been measured. Ask the owner before offering large uploads.\n",
+    "search": "\n## When to use this\nCall this before you start, or when something is not working, to confirm the service is reachable. This is the only endpoint that does not need an API key.\n\n## What you get back\n```json\n{\"status\":\"ok\",\"ai_configured\":true,\"require_api_key\":true,\n \"max_upload_mb\":200,\"max_pdf_pages\":40,\"max_batch_files\":10}\n```\n\n| Field | What it tells you |\n|---|---|\n| status | \"ok\" means the service is running. |\n| require_api_key | true means every other endpoint needs your key. |\n| max_batch_files | How many PDFs you can send in one request. |\n| max_upload_mb | The largest single PDF you can send. |\n| max_pdf_pages | The most pages one PDF can have. |\n| ai_configured | false means the owner has not set up the AI provider yet. |\n\nRead the limits from here instead of hard-coding them. The owner can change them.\n",
     "method": "GET",
     "path": "/api/health",
     "success": "200 OK",
@@ -643,15 +637,28 @@ export const DOC_PAGES: DocPage[] = [
     ]
   },
   {
-    "id": "upload",
-    "title": "Submit a PDF",
+    "id": "submit",
+    "title": "Send PDFs for extraction",
     "group": "Extraction API",
-    "summary": "Send one PDF and the fields you want. Get a job ID to check later.",
+    "summary": "Upload your PDFs and the list of fields you want. You get an ID to check later.",
     "blocks": [
       {
         "kind": "heading",
-        "text": "Request body",
-        "id": "request-body"
+        "text": "What this does",
+        "id": "what-this-does"
+      },
+      {
+        "kind": "paragraph",
+        "html": "You send your PDF files and a JSON Schema saying which fields you want. The service takes the work and answers straight away with an extraction ID."
+      },
+      {
+        "kind": "paragraph",
+        "html": "<strong>The result is not in this response.</strong> Reading a PDF takes 15 to 30 seconds, so the answer comes from <a href=\"/documentation/results-endpoint\">Get the results</a> using that ID."
+      },
+      {
+        "kind": "heading",
+        "text": "What to send",
+        "id": "what-to-send"
       },
       {
         "kind": "paragraph",
@@ -666,14 +673,14 @@ export const DOC_PAGES: DocPage[] = [
         ],
         "rows": [
           [
-            "file",
+            "files",
             "Yes",
-            "One PDF file, with type application/pdf."
+            "Your PDF file. Repeat this field once per PDF. Do not write files[]."
           ],
           [
             "output_template",
             "Yes",
-            "JSON Schema as text, 2-12,000 characters."
+            "Your JSON Schema as text, 2-12,000 characters."
           ],
           [
             "ocr_mode",
@@ -684,30 +691,34 @@ export const DOC_PAGES: DocPage[] = [
       },
       {
         "kind": "paragraph",
-        "html": "Send file bytes, not a file URL or base64 JSON. There is no custom instruction field. Describe the required fields in your schema."
+        "html": "Send the file bytes, not a link or base64 text."
       },
       {
         "kind": "heading",
-        "text": "Response",
-        "id": "response"
-      },
-      {
-        "kind": "paragraph",
-        "html": "HTTP 202 returns a job. result is null because work has not finished. batch_id is null for this single-file API. The complete example below uses a schema with only totalAmount."
+        "text": "What you get back",
+        "id": "what-you-get-back"
       },
       {
         "kind": "code",
         "language": "json",
-        "text": "{\n  \"id\": \"example-job-id\",\n  \"batch_id\": null,\n  \"file_name\": \"invoice.pdf\",\n  \"file_size\": 24576,\n  \"instruction\": \"Extract only the fields defined by the supplied JSON Schema.\",\n  \"ocr_mode\": \"auto\",\n  \"status\": \"queued\",\n  \"progress\": 0,\n  \"stage\": \"Queued\",\n  \"error\": null,\n  \"result\": null,\n  \"page_count\": 1,\n  \"ocr_pages\": 0,\n  \"python_text_pages\": 0,\n  \"vision_attempted_pages\": 0,\n  \"vision_pages\": 0,\n  \"vision_failed_pages\": 0,\n  \"text_model\": \"mistral-small-2603\",\n  \"vision_model\": \"mistral-small-2603\",\n  \"ocr_model\": \"mistral-ocr-4-0\",\n  \"schema_mode\": \"json_schema\",\n  \"output_template\": \"{\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"totalAmount\\\":{\\\"type\\\":\\\"number\\\"}}}\",\n  \"duration_ms\": null,\n  \"failure_code\": null,\n  \"failure_stage\": null,\n  \"created_at\": \"2026-09-08T08:00:00+00:00\",\n  \"updated_at\": \"2026-09-08T08:00:00+00:00\"\n}"
-      },
-      {
-        "kind": "heading",
-        "text": "What to do next",
-        "id": "what-to-do-next"
+        "text": "{\"extraction_id\":\"a1b2c3d4\",\"accepted_count\":1,\"rejected_count\":1,\n \"jobs\":[{\"id\":\"doc-1\",\"extraction_id\":\"a1b2c3d4\",\"status\":\"queued\",\"result\":null}],\n \"rejected\":[{\"file_name\":\"broken.pdf\",\"error\":\"The uploaded file is not a valid PDF.\"}]}"
       },
       {
         "kind": "paragraph",
-        "html": "Save id in your app and <a href=\"/documentation/get-job\">check the job</a>. The result will be in result.data when status is completed."
+        "html": "Save <code>extraction_id</code>. That is the only thing you need to get your results."
+      },
+      {
+        "kind": "heading",
+        "text": "A bad file does not spoil the rest",
+        "id": "a-bad-file-does-not-spoil-the-rest"
+      },
+      {
+        "kind": "paragraph",
+        "html": "If you send five PDFs and one is damaged, the other four are still processed. The damaged one appears in <code>rejected</code> with the reason. Rejected files are not counted against your monthly limit."
+      },
+      {
+        "kind": "paragraph",
+        "html": "Always read <code>accepted_count</code>. If it is 0, nothing was accepted and there is nothing to check."
       },
       {
         "kind": "heading",
@@ -715,593 +726,338 @@ export const DOC_PAGES: DocPage[] = [
         "id": "common-errors"
       },
       {
-        "kind": "paragraph",
-        "html": "400: the PDF is empty, invalid, protected, too large or has too many pages. 422: a required field or schema is missing or invalid. 401: the key is invalid. 402: the monthly document limit is reached. 429: too many requests or the work queue is full. 503: AI keys are not configured."
+        "kind": "table",
+        "headers": [
+          "Code",
+          "What happened"
+        ],
+        "rows": [
+          [
+            "401",
+            "Your key is missing, wrong or switched off."
+          ],
+          [
+            "402",
+            "Your monthly document limit is used up. Nothing was processed."
+          ],
+          [
+            "413",
+            "The files together are too large."
+          ],
+          [
+            "422",
+            "Too many files, or your JSON Schema is not valid."
+          ],
+          [
+            "429",
+            "Too many requests. Wait as long as the Retry-After header says."
+          ]
+        ]
       },
       {
         "kind": "heading",
-        "text": "If you lose the response",
-        "id": "if-you-lose-the-response"
+        "text": "If you do not get a response",
+        "id": "if-you-do-not-get-a-response"
       },
       {
         "kind": "paragraph",
-        "html": "Do not send the same PDF again immediately. It may already be accepted. The API does not detect duplicate uploads, so another request can use more quota. Check recent jobs or contact the owner first."
+        "html": "Do not send the same PDFs again straight away. They may already have been accepted, and sending them again uses your limit twice. Check first with the extraction ID if you have it."
       }
     ],
-    "search": "\n## Request body\nUse multipart/form-data. Let your HTTP library set the Content-Type and boundary.\n| Field | Required | What to send |\n|---|---|---|\n| file | Yes | One PDF file, with type application/pdf. |\n| output_template | Yes | JSON Schema as text, 2-12,000 characters. |\n| ocr_mode | No | auto, always or never. Default: auto. |\n\nSend file bytes, not a file URL or base64 JSON. There is no custom instruction field. Describe the required fields in your schema.\n\n## Response\nHTTP 202 returns a job. result is null because work has not finished. batch_id is null for this single-file API. The complete example below uses a schema with only totalAmount.\n```json\n{\n  \"id\": \"example-job-id\",\n  \"batch_id\": null,\n  \"file_name\": \"invoice.pdf\",\n  \"file_size\": 24576,\n  \"instruction\": \"Extract only the fields defined by the supplied JSON Schema.\",\n  \"ocr_mode\": \"auto\",\n  \"status\": \"queued\",\n  \"progress\": 0,\n  \"stage\": \"Queued\",\n  \"error\": null,\n  \"result\": null,\n  \"page_count\": 1,\n  \"ocr_pages\": 0,\n  \"python_text_pages\": 0,\n  \"vision_attempted_pages\": 0,\n  \"vision_pages\": 0,\n  \"vision_failed_pages\": 0,\n  \"text_model\": \"mistral-small-2603\",\n  \"vision_model\": \"mistral-small-2603\",\n  \"ocr_model\": \"mistral-ocr-4-0\",\n  \"schema_mode\": \"json_schema\",\n  \"output_template\": \"{\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"totalAmount\\\":{\\\"type\\\":\\\"number\\\"}}}\",\n  \"duration_ms\": null,\n  \"failure_code\": null,\n  \"failure_stage\": null,\n  \"created_at\": \"2026-09-08T08:00:00+00:00\",\n  \"updated_at\": \"2026-09-08T08:00:00+00:00\"\n}\n```\n## What to do next\nSave id in your app and [check the job](/documentation/get-job). The result will be in result.data when status is completed.\n\n## Common errors\n400: the PDF is empty, invalid, protected, too large or has too many pages. 422: a required field or schema is missing or invalid. 401: the key is invalid. 402: the monthly document limit is reached. 429: too many requests or the work queue is full. 503: AI keys are not configured.\n\n## If you lose the response\nDo not send the same PDF again immediately. It may already be accepted. The API does not detect duplicate uploads, so another request can use more quota. Check recent jobs or contact the owner first.\n",
+    "search": "\n## What this does\nYou send your PDF files and a JSON Schema saying which fields you want. The service takes the work and answers straight away with an extraction ID.\n\n**The result is not in this response.** Reading a PDF takes 15 to 30 seconds, so the answer comes from [Get the results](/documentation/results-endpoint) using that ID.\n\n## What to send\nUse multipart/form-data. Let your HTTP library set the Content-Type and boundary.\n\n| Field | Required | What to send |\n|---|---|---|\n| files | Yes | Your PDF file. Repeat this field once per PDF. Do not write files[]. |\n| output_template | Yes | Your JSON Schema as text, 2-12,000 characters. |\n| ocr_mode | No | auto, always or never. Default: auto. |\n\nSend the file bytes, not a link or base64 text.\n\n## What you get back\n```json\n{\"extraction_id\":\"a1b2c3d4\",\"accepted_count\":1,\"rejected_count\":1,\n \"jobs\":[{\"id\":\"doc-1\",\"extraction_id\":\"a1b2c3d4\",\"status\":\"queued\",\"result\":null}],\n \"rejected\":[{\"file_name\":\"broken.pdf\",\"error\":\"The uploaded file is not a valid PDF.\"}]}\n```\n\nSave `extraction_id`. That is the only thing you need to get your results.\n\n## A bad file does not spoil the rest\nIf you send five PDFs and one is damaged, the other four are still processed. The damaged one appears in `rejected` with the reason. Rejected files are not counted against your monthly limit.\n\nAlways read `accepted_count`. If it is 0, nothing was accepted and there is nothing to check.\n\n## Common errors\n| Code | What happened |\n|---|---|\n| 401 | Your key is missing, wrong or switched off. |\n| 402 | Your monthly document limit is used up. Nothing was processed. |\n| 413 | The files together are too large. |\n| 422 | Too many files, or your JSON Schema is not valid. |\n| 429 | Too many requests. Wait as long as the Retry-After header says. |\n\n## If you do not get a response\nDo not send the same PDFs again straight away. They may already have been accepted, and sending them again uses your limit twice. Check first with the extraction ID if you have it.\n",
     "method": "POST",
-    "path": "/api/jobs",
+    "path": "/api/v1/extractions",
     "success": "202 Accepted",
     "auth": "Client API key required",
     "samples": [
       {
         "language": "cURL",
-        "code": "# Set PAPERSIGNAL_API_KEY privately in your environment.\ncurl --fail-with-body https://papersignal.duckdns.org/api/jobs \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\" \\\n  -F 'file=@invoice.pdf;type=application/pdf' \\\n  -F 'output_template=<invoice.schema.json' \\\n  -F 'ocr_mode=auto'"
+        "code": "# Set PAPERSIGNAL_API_KEY privately in your environment.\ncurl --fail-with-body https://papersignal.duckdns.org/api/v1/extractions \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\" \\\n  -F 'files=@invoice.pdf;type=application/pdf' \\\n  -F 'output_template=<invoice.schema.json' \\\n  -F 'ocr_mode=auto'"
       },
       {
         "language": "Node.js",
-        "code": "// Node.js 22+; run on your backend.\nimport { readFile } from 'node:fs/promises';\n\nconst form = new FormData();\nform.append('file', new Blob([await readFile('invoice.pdf')],\n  { type: 'application/pdf' }), 'invoice.pdf');\nform.append('output_template', JSON.stringify({\n  type: 'object', properties: { totalAmount: { type: 'number' } }\n}));\n\nconst response = await fetch('https://papersignal.duckdns.org/api/jobs', {\n  method: 'POST',\n  headers: { 'X-API-Key': process.env.PAPERSIGNAL_API_KEY },\n  body: form,\n  signal: AbortSignal.timeout(120_000)\n});\nif (!response.ok) throw new Error(`Upload HTTP ${response.status}`);\nconst job = await response.json();\nconsole.log(job.id); // Persist this ID, then poll for the result."
+        "code": "// Node.js 22+; run on your backend.\nimport { readFile } from 'node:fs/promises';\n\nconst form = new FormData();\nform.append('files', new Blob([await readFile('invoice.pdf')],\n  { type: 'application/pdf' }), 'invoice.pdf');\nform.append('output_template', JSON.stringify({\n  type: 'object', properties: { totalAmount: { type: 'number' } }\n}));\n\nconst response = await fetch('https://papersignal.duckdns.org/api/v1/extractions', {\n  method: 'POST',\n  headers: { 'X-API-Key': process.env.PAPERSIGNAL_API_KEY },\n  body: form,\n  signal: AbortSignal.timeout(120_000)\n});\nif (!response.ok) throw new Error(`Upload HTTP ${response.status}`);\nconst batch = await response.json();\nconsole.log(batch.extraction_id); // Persist this ID, then poll for the result."
       },
       {
         "language": "Python",
-        "code": "# Python with requests installed; run on your backend.\nimport json, os, requests\n\nschema = {\n    \"type\": \"object\",\n    \"properties\": {\"totalAmount\": {\"type\": \"number\"}}\n}\nwith open(\"invoice.pdf\", \"rb\") as pdf:\n    response = requests.post(\n        \"https://papersignal.duckdns.org/api/jobs\",\n        headers={\"X-API-Key\": os.environ[\"PAPERSIGNAL_API_KEY\"]},\n        files={\"file\": (\"invoice.pdf\", pdf, \"application/pdf\")},\n        data={\"output_template\": json.dumps(schema), \"ocr_mode\": \"auto\"},\n        timeout=(10, 120),\n    )\nresponse.raise_for_status()\njob = response.json()\nprint(job[\"id\"])  # Persist this ID, then poll for the result."
+        "code": "# Python with requests installed; run on your backend.\nimport json, os, requests\n\nschema = {\n    \"type\": \"object\",\n    \"properties\": {\"totalAmount\": {\"type\": \"number\"}}\n}\nwith open(\"invoice.pdf\", \"rb\") as pdf:\n    response = requests.post(\n        \"https://papersignal.duckdns.org/api/v1/extractions\",\n        headers={\"X-API-Key\": os.environ[\"PAPERSIGNAL_API_KEY\"]},\n        files={\"file\": (\"invoice.pdf\", pdf, \"application/pdf\")},\n        data={\"output_template\": json.dumps(schema), \"ocr_mode\": \"auto\"},\n        timeout=(10, 120),\n    )\nresponse.raise_for_status()\njob = response.json()\nprint(job[\"id\"])  # Persist this ID, then poll for the result."
       }
     ]
   },
   {
-    "id": "batch-upload",
-    "title": "Submit a batch",
+    "id": "results-endpoint",
+    "title": "Get the results",
     "group": "Extraction API",
-    "summary": "Send several PDFs with one schema. Get one result for each accepted file.",
+    "summary": "Check your extraction until it is finished, then read the extracted fields.",
     "blocks": [
       {
         "kind": "heading",
-        "text": "Request body",
-        "id": "request-body"
+        "text": "What this does",
+        "id": "what-this-does"
       },
       {
         "kind": "paragraph",
-        "html": "Use multipart/form-data. Repeat the field named files once for each PDF. Do not use file or files[]."
+        "html": "You give it the extraction ID and it tells you how each document is doing. When a document is finished, its extracted fields are in <code>result.data</code>."
+      },
+      {
+        "kind": "paragraph",
+        "html": "Ask again every 2 to 3 seconds until every document says <code>completed</code> or <code>failed</code>."
+      },
+      {
+        "kind": "heading",
+        "text": "What you get back",
+        "id": "what-you-get-back"
+      },
+      {
+        "kind": "code",
+        "language": "json",
+        "text": "[{\"id\":\"doc-1\",\"extraction_id\":\"a1b2c3d4\",\"file_name\":\"invoice.pdf\",\n  \"status\":\"completed\",\"progress\":100,\n  \"result\":{\"data\":{\"totalAmount\":4500},\"evidence\":[],\"warnings\":[]}}]"
+      },
+      {
+        "kind": "paragraph",
+        "html": "You get a list with one entry per PDF you sent, in the order you sent them."
+      },
+      {
+        "kind": "heading",
+        "text": "The four statuses",
+        "id": "the-four-statuses"
       },
       {
         "kind": "table",
         "headers": [
-          "Field",
-          "Required",
-          "What to send"
+          "Status",
+          "What it means",
+          "What to do"
         ],
         "rows": [
           [
-            "files",
-            "Yes",
-            "One or more PDF file parts."
+            "queued",
+            "Waiting its turn.",
+            "Ask again in a few seconds."
           ],
           [
-            "output_template",
-            "Yes",
-            "One JSON Schema text field, 2-12,000 characters."
+            "processing",
+            "Being read now. progress shows how far it is.",
+            "Ask again in a few seconds."
           ],
           [
-            "ocr_mode",
-            "No",
-            "auto, always or never. Default: auto."
-          ]
-        ]
-      },
-      {
-        "kind": "paragraph",
-        "html": "The same schema is used for every file. A batch does not combine the PDFs into one result."
-      },
-      {
-        "kind": "heading",
-        "text": "Response",
-        "id": "response"
-      },
-      {
-        "kind": "paragraph",
-        "html": "HTTP 202 returns accepted jobs and rejected files. This example leaves out some job fields to keep it short."
-      },
-      {
-        "kind": "code",
-        "language": "json",
-        "text": "{\"batch_id\":\"example-batch-id\",\"accepted_count\":1,\"rejected_count\":1,\n \"jobs\":[{\"id\":\"example-job-id\",\"status\":\"queued\",\"result\":null}],\n \"rejected\":[{\"file_name\":\"bad.pdf\",\"error\":\"The uploaded file is not a valid PDF.\"}]}"
-      },
-      {
-        "kind": "heading",
-        "text": "Check both counts",
-        "id": "check-both-counts"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Always read accepted_count, rejected_count and rejected. A 202 response can have zero accepted jobs. In that case, do not check the batch later: it has no saved jobs and batch lookup returns 404."
-      },
-      {
-        "kind": "paragraph",
-        "html": "If the work queue becomes full, affected files appear in rejected. Valid files can still be accepted while invalid files are rejected."
-      },
-      {
-        "kind": "heading",
-        "text": "Limits and errors",
-        "id": "limits-and-errors"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Too many files or an invalid schema returns 422. Too much combined data returns 413. The monthly quota check counts all submitted files before validation, but only accepted documents are added to usage."
-      },
-      {
-        "kind": "heading",
-        "text": "Next step",
-        "id": "next-step"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Save batch_id and the accepted job IDs. <a href=\"/documentation/get-batch\">Check the batch</a> until all accepted jobs finish. A server error may happen after some files have been accepted, so do not automatically send the whole batch again."
-      }
-    ],
-    "search": "\n## Request body\nUse multipart/form-data. Repeat the field named files once for each PDF. Do not use file or files[].\n| Field | Required | What to send |\n|---|---|---|\n| files | Yes | One or more PDF file parts. |\n| output_template | Yes | One JSON Schema text field, 2-12,000 characters. |\n| ocr_mode | No | auto, always or never. Default: auto. |\n\nThe same schema is used for every file. A batch does not combine the PDFs into one result.\n\n## Response\nHTTP 202 returns accepted jobs and rejected files. This example leaves out some job fields to keep it short.\n```json\n{\"batch_id\":\"example-batch-id\",\"accepted_count\":1,\"rejected_count\":1,\n \"jobs\":[{\"id\":\"example-job-id\",\"status\":\"queued\",\"result\":null}],\n \"rejected\":[{\"file_name\":\"bad.pdf\",\"error\":\"The uploaded file is not a valid PDF.\"}]}\n```\n## Check both counts\nAlways read accepted_count, rejected_count and rejected. A 202 response can have zero accepted jobs. In that case, do not check the batch later: it has no saved jobs and batch lookup returns 404.\n\nIf the work queue becomes full, affected files appear in rejected. Valid files can still be accepted while invalid files are rejected.\n\n## Limits and errors\nToo many files or an invalid schema returns 422. Too much combined data returns 413. The monthly quota check counts all submitted files before validation, but only accepted documents are added to usage.\n\n## Next step\nSave batch_id and the accepted job IDs. [Check the batch](/documentation/get-batch) until all accepted jobs finish. A server error may happen after some files have been accepted, so do not automatically send the whole batch again.\n",
-    "method": "POST",
-    "path": "/api/jobs/batch",
-    "success": "202 Accepted",
-    "auth": "Client API key required",
-    "samples": [
-      {
-        "language": "cURL",
-        "code": "# Set PAPERSIGNAL_API_KEY privately in your environment.\ncurl --fail-with-body https://papersignal.duckdns.org/api/jobs/batch \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\" \\\n  -F 'files=@invoice-a.pdf;type=application/pdf' \\\n  -F 'files=@invoice-b.pdf;type=application/pdf' \\\n  -F 'output_template=<invoice.schema.json' \\\n  -F 'ocr_mode=auto'"
-      }
-    ]
-  },
-  {
-    "id": "get-job",
-    "title": "Retrieve a job",
-    "group": "Extraction API",
-    "summary": "Check one job and read its result using the key that created it.",
-    "blocks": [
-      {
-        "kind": "heading",
-        "text": "Path parameter",
-        "id": "path-parameter"
-      },
-      {
-        "kind": "table",
-        "headers": [
-          "Parameter",
-          "Required",
-          "Meaning"
-        ],
-        "rows": [
+            "completed",
+            "Finished.",
+            "Read result.data."
+          ],
           [
-            "job_id",
-            "Yes",
-            "The id returned when you uploaded the PDF."
+            "failed",
+            "Did not finish.",
+            "Read error and failure_code."
           ]
         ]
       },
       {
+        "kind": "heading",
+        "text": "Reading the result",
+        "id": "reading-the-result"
+      },
+      {
         "kind": "paragraph",
-        "html": "Replace {job_id} in the URL with the real ID."
+        "html": "<code>result.data</code> matches your schema exactly. Same field names, same shape. Any field the PDF did not contain comes back as <code>null</code>, and anything you did not ask for is removed."
+      },
+      {
+        "kind": "paragraph",
+        "html": "<code>result.evidence</code> shows which page each value was found on, so you can check the answer."
       },
       {
         "kind": "heading",
-        "text": "Response",
-        "id": "response"
+        "text": "How long it takes",
+        "id": "how-long-it-takes"
       },
       {
         "kind": "paragraph",
-        "html": "HTTP 200 returns one <a href=\"/documentation/results\">job object</a>. result is null before success. This short example leaves out other job fields and result metadata."
+        "html": "About 15 to 30 seconds per PDF. Two PDFs are read at a time; the rest wait their turn. So ten PDFs take longer than one."
       },
       {
-        "kind": "code",
-        "language": "json",
-        "text": "{\"id\":\"example-job-id\",\"status\":\"completed\",\"progress\":100,\n \"result\":{\"data\":{\"totalAmount\":1250},\"evidence\":[],\"warnings\":[]}}"
+        "kind": "paragraph",
+        "html": "If you stop checking, the work still continues. You can come back to the same ID later."
       },
       {
         "kind": "heading",
-        "text": "Check status",
-        "id": "check-status"
+        "text": "If a document failed",
+        "id": "if-a-document-failed"
       },
       {
         "kind": "paragraph",
-        "html": "queued means waiting; processing means running. completed means the data is ready. failed means extraction did not succeed. A failed job still returns HTTP 200, so your app must check status."
+        "html": "The request itself still succeeds with 200. Look at <code>failure_code</code> on that document to see whether to try again or fix something. See <a href=\"/documentation/errors\">When something goes wrong</a>."
       },
       {
         "kind": "heading",
-        "text": "How often to check",
-        "id": "how-often-to-check"
+        "text": "You only see your own work",
+        "id": "you-only-see-your-own-work"
       },
       {
         "kind": "paragraph",
-        "html": "Start with one check every three seconds. All requests using the same key share its rate limit. If you get 429, wait for Retry-After before checking again. Set a deadline and keep the job ID if you stop waiting."
-      },
-      {
-        "kind": "heading",
-        "text": "Errors",
-        "id": "errors"
-      },
-      {
-        "kind": "paragraph",
-        "html": "404 means the job does not exist or belongs to another key. 401 means the key is invalid. 429 means the request limit was reached."
+        "html": "An extraction created with a different key returns 404, as if it does not exist."
       }
     ],
-    "search": "\n## Path parameter\n| Parameter | Required | Meaning |\n|---|---|---|\n| job_id | Yes | The id returned when you uploaded the PDF. |\n\nReplace {job_id} in the URL with the real ID.\n\n## Response\nHTTP 200 returns one [job object](/documentation/results). result is null before success. This short example leaves out other job fields and result metadata.\n```json\n{\"id\":\"example-job-id\",\"status\":\"completed\",\"progress\":100,\n \"result\":{\"data\":{\"totalAmount\":1250},\"evidence\":[],\"warnings\":[]}}\n```\n## Check status\nqueued means waiting; processing means running. completed means the data is ready. failed means extraction did not succeed. A failed job still returns HTTP 200, so your app must check status.\n\n## How often to check\nStart with one check every three seconds. All requests using the same key share its rate limit. If you get 429, wait for Retry-After before checking again. Set a deadline and keep the job ID if you stop waiting.\n\n## Errors\n404 means the job does not exist or belongs to another key. 401 means the key is invalid. 429 means the request limit was reached.\n",
+    "search": "\n## What this does\nYou give it the extraction ID and it tells you how each document is doing. When a document is finished, its extracted fields are in `result.data`.\n\nAsk again every 2 to 3 seconds until every document says `completed` or `failed`.\n\n## What you get back\n```json\n[{\"id\":\"doc-1\",\"extraction_id\":\"a1b2c3d4\",\"file_name\":\"invoice.pdf\",\n  \"status\":\"completed\",\"progress\":100,\n  \"result\":{\"data\":{\"totalAmount\":4500},\"evidence\":[],\"warnings\":[]}}]\n```\n\nYou get a list with one entry per PDF you sent, in the order you sent them.\n\n## The four statuses\n| Status | What it means | What to do |\n|---|---|---|\n| queued | Waiting its turn. | Ask again in a few seconds. |\n| processing | Being read now. progress shows how far it is. | Ask again in a few seconds. |\n| completed | Finished. | Read result.data. |\n| failed | Did not finish. | Read error and failure_code. |\n\n## Reading the result\n`result.data` matches your schema exactly. Same field names, same shape. Any field the PDF did not contain comes back as `null`, and anything you did not ask for is removed.\n\n`result.evidence` shows which page each value was found on, so you can check the answer.\n\n## How long it takes\nAbout 15 to 30 seconds per PDF. Two PDFs are read at a time; the rest wait their turn. So ten PDFs take longer than one.\n\nIf you stop checking, the work still continues. You can come back to the same ID later.\n\n## If a document failed\nThe request itself still succeeds with 200. Look at `failure_code` on that document to see whether to try again or fix something. See [When something goes wrong](/documentation/errors).\n\n## You only see your own work\nAn extraction created with a different key returns 404, as if it does not exist.\n",
     "method": "GET",
-    "path": "/api/jobs/{job_id}",
+    "path": "/api/v1/extractions/{extraction_id}",
     "success": "200 OK",
     "auth": "Client API key required",
     "samples": [
       {
         "language": "cURL",
-        "code": "curl --fail-with-body \"https://papersignal.duckdns.org/api/jobs/{job_id}\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\""
+        "code": "curl --fail-with-body \"https://papersignal.duckdns.org/api/v1/extractions/{extraction_id}\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\""
       }
     ]
   },
   {
-    "id": "get-batch",
-    "title": "Retrieve a batch",
+    "id": "delete",
+    "title": "Delete documents and results",
     "group": "Extraction API",
-    "summary": "Check all jobs in a batch with one request.",
+    "summary": "Remove your uploaded PDFs and their results when you no longer need them.",
     "blocks": [
       {
         "kind": "heading",
-        "text": "Path parameter",
-        "id": "path-parameter"
+        "text": "What this does",
+        "id": "what-this-does"
+      },
+      {
+        "kind": "paragraph",
+        "html": "Deletes everything in one extraction: the PDFs you uploaded, the records and the results. This cannot be undone."
+      },
+      {
+        "kind": "heading",
+        "text": "What you get back",
+        "id": "what-you-get-back"
       },
       {
         "kind": "table",
         "headers": [
-          "Parameter",
-          "Required",
-          "Meaning"
+          "Code",
+          "What it means"
         ],
         "rows": [
           [
-            "batch_id",
-            "Yes",
-            "The batch_id returned by batch upload."
+            "204",
+            "Deleted. The response is empty, which is normal."
+          ],
+          [
+            "409",
+            "Something is still being read. Wait for it to finish, then try again."
+          ],
+          [
+            "404",
+            "That ID does not exist, or it belongs to a different key."
           ]
         ]
       },
       {
         "kind": "heading",
-        "text": "Response",
-        "id": "response"
+        "text": "Why you should use it",
+        "id": "why-you-should-use-it"
       },
       {
         "kind": "paragraph",
-        "html": "HTTP 200 returns a list of job objects. There is no outer batch object or overall batch status. This example leaves out other job fields."
-      },
-      {
-        "kind": "code",
-        "language": "json",
-        "text": "[{\"id\":\"job-a\",\"status\":\"completed\",\"result\":{\"data\":{\"totalAmount\":1250}}},\n {\"id\":\"job-b\",\"status\":\"processing\",\"result\":null}]"
-      },
-      {
-        "kind": "heading",
-        "text": "When to stop checking",
-        "id": "when-to-stop-checking"
+        "html": "Your uploaded PDFs stay on the server until something deletes them. Nothing removes them automatically."
       },
       {
         "kind": "paragraph",
-        "html": "Keep checking while an expected job is queued or processing. Stop when every expected job is completed or failed. One failed job does not mean the other jobs failed."
-      },
-      {
-        "kind": "paragraph",
-        "html": "Jobs are ordered by creation time, then ID. Use each job&#x27;s ID to match it to your app&#x27;s records; do not rely on list position."
-      },
-      {
-        "kind": "heading",
-        "text": "Missing batch",
-        "id": "missing-batch"
-      },
-      {
-        "kind": "paragraph",
-        "html": "404 means no jobs in this batch are visible to your key. This can happen for an unknown batch, another key&#x27;s batch, an all-rejected upload, or a batch whose jobs were deleted. Save the accepted job IDs and handle missing jobs separately."
+        "html": "If your documents contain private information, call this once your app has saved the fields it needs."
       }
     ],
-    "search": "\n## Path parameter\n| Parameter | Required | Meaning |\n|---|---|---|\n| batch_id | Yes | The batch_id returned by batch upload. |\n\n## Response\nHTTP 200 returns a list of job objects. There is no outer batch object or overall batch status. This example leaves out other job fields.\n```json\n[{\"id\":\"job-a\",\"status\":\"completed\",\"result\":{\"data\":{\"totalAmount\":1250}}},\n {\"id\":\"job-b\",\"status\":\"processing\",\"result\":null}]\n```\n## When to stop checking\nKeep checking while an expected job is queued or processing. Stop when every expected job is completed or failed. One failed job does not mean the other jobs failed.\n\nJobs are ordered by creation time, then ID. Use each job's ID to match it to your app's records; do not rely on list position.\n\n## Missing batch\n404 means no jobs in this batch are visible to your key. This can happen for an unknown batch, another key's batch, an all-rejected upload, or a batch whose jobs were deleted. Save the accepted job IDs and handle missing jobs separately.\n",
-    "method": "GET",
-    "path": "/api/batches/{batch_id}",
-    "success": "200 OK",
-    "auth": "Client API key required",
-    "samples": [
-      {
-        "language": "cURL",
-        "code": "curl --fail-with-body \"https://papersignal.duckdns.org/api/batches/{batch_id}\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\""
-      }
-    ]
-  },
-  {
-    "id": "get-many",
-    "title": "Retrieve selected jobs",
-    "group": "Extraction API",
-    "summary": "Check up to 50 job IDs in one request.",
-    "blocks": [
-      {
-        "kind": "heading",
-        "text": "Query parameter",
-        "id": "query-parameter"
-      },
-      {
-        "kind": "table",
-        "headers": [
-          "Parameter",
-          "Required",
-          "Meaning"
-        ],
-        "rows": [
-          [
-            "ids",
-            "Yes",
-            "Job IDs separated by commas, such as id1,id2."
-          ]
-        ]
-      },
-      {
-        "kind": "paragraph",
-        "html": "Send at least one nonempty ID and at most 50 nonempty IDs."
-      },
-      {
-        "kind": "heading",
-        "text": "Response",
-        "id": "response"
-      },
-      {
-        "kind": "paragraph",
-        "html": "HTTP 200 returns a list of full job objects. Repeated IDs appear once. The response follows the order of the first occurrence of each ID."
-      },
-      {
-        "kind": "paragraph",
-        "html": "Unknown IDs and jobs belonging to other keys are left out. If no jobs are visible, the result is:"
-      },
-      {
-        "kind": "code",
-        "language": "json",
-        "text": "[]"
-      },
-      {
-        "kind": "paragraph",
-        "html": "An empty list is not proof that work finished. Compare the returned IDs with the IDs you requested."
-      },
-      {
-        "kind": "heading",
-        "text": "Errors",
-        "id": "errors"
-      },
-      {
-        "kind": "paragraph",
-        "html": "422 means ids is missing, empty or has more than 50 IDs. A wrong key returns 401. Too many requests returns 429."
-      }
-    ],
-    "search": "\n## Query parameter\n| Parameter | Required | Meaning |\n|---|---|---|\n| ids | Yes | Job IDs separated by commas, such as id1,id2. |\n\nSend at least one nonempty ID and at most 50 nonempty IDs.\n\n## Response\nHTTP 200 returns a list of full job objects. Repeated IDs appear once. The response follows the order of the first occurrence of each ID.\n\nUnknown IDs and jobs belonging to other keys are left out. If no jobs are visible, the result is:\n```json\n[]\n```\nAn empty list is not proof that work finished. Compare the returned IDs with the IDs you requested.\n\n## Errors\n422 means ids is missing, empty or has more than 50 IDs. A wrong key returns 401. Too many requests returns 429.\n",
-    "method": "GET",
-    "path": "/api/jobs/batch?ids=id1,id2",
-    "success": "200 OK",
-    "auth": "Client API key required",
-    "samples": [
-      {
-        "language": "cURL",
-        "code": "curl --fail-with-body \"https://papersignal.duckdns.org/api/jobs/batch?ids=id1,id2\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\""
-      }
-    ]
-  },
-  {
-    "id": "list-jobs",
-    "title": "List recent jobs",
-    "group": "Extraction API",
-    "summary": "Get the most recent jobs created with your key.",
-    "blocks": [
-      {
-        "kind": "heading",
-        "text": "Query parameter",
-        "id": "query-parameter"
-      },
-      {
-        "kind": "table",
-        "headers": [
-          "Parameter",
-          "Required",
-          "Meaning"
-        ],
-        "rows": [
-          [
-            "limit",
-            "No",
-            "Number of jobs to return. Default: 20."
-          ]
-        ]
-      },
-      {
-        "kind": "paragraph",
-        "html": "Values below 1 are changed to 1. Values above 100 are changed to 100. The value must be an integer."
-      },
-      {
-        "kind": "heading",
-        "text": "Response",
-        "id": "response"
-      },
-      {
-        "kind": "paragraph",
-        "html": "HTTP 200 returns a list of full job objects, newest first. A key with no jobs receives an empty list."
-      },
-      {
-        "kind": "code",
-        "language": "json",
-        "text": "[]"
-      },
-      {
-        "kind": "paragraph",
-        "html": "There is no next-page token, offset or total count. Save job IDs in your own database if you need complete history."
-      },
-      {
-        "kind": "heading",
-        "text": "Finding an uncertain upload",
-        "id": "finding-an-uncertain-upload"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Use this list to help check an upload whose response was lost. A filename is not a unique ID. Check the time and your own records, or ask the service owner, before uploading again."
-      }
-    ],
-    "search": "\n## Query parameter\n| Parameter | Required | Meaning |\n|---|---|---|\n| limit | No | Number of jobs to return. Default: 20. |\n\nValues below 1 are changed to 1. Values above 100 are changed to 100. The value must be an integer.\n\n## Response\nHTTP 200 returns a list of full job objects, newest first. A key with no jobs receives an empty list.\n```json\n[]\n```\nThere is no next-page token, offset or total count. Save job IDs in your own database if you need complete history.\n\n## Finding an uncertain upload\nUse this list to help check an upload whose response was lost. A filename is not a unique ID. Check the time and your own records, or ask the service owner, before uploading again.\n",
-    "method": "GET",
-    "path": "/api/jobs?limit=20",
-    "success": "200 OK",
-    "auth": "Client API key required",
-    "samples": [
-      {
-        "language": "cURL",
-        "code": "curl --fail-with-body \"https://papersignal.duckdns.org/api/jobs?limit=20\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\""
-      }
-    ]
-  },
-  {
-    "id": "delete-job",
-    "title": "Delete a job",
-    "group": "Extraction API",
-    "summary": "Remove a saved PDF and its result after you have saved what your app needs.",
-    "blocks": [
-      {
-        "kind": "heading",
-        "text": "Path parameter",
-        "id": "path-parameter"
-      },
-      {
-        "kind": "table",
-        "headers": [
-          "Parameter",
-          "Required",
-          "Meaning"
-        ],
-        "rows": [
-          [
-            "job_id",
-            "Yes",
-            "The ID of a job owned by your key."
-          ]
-        ]
-      },
-      {
-        "kind": "heading",
-        "text": "Response",
-        "id": "response"
-      },
-      {
-        "kind": "paragraph",
-        "html": "HTTP 204 means deletion succeeded. The response has no body, so do not try to read JSON from it. The local PDF and job/result record are removed. There is no restore API."
-      },
-      {
-        "kind": "heading",
-        "text": "When to delete",
-        "id": "when-to-delete"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Delete only completed or failed jobs in your integration. A processing job returns 409. Although the code allows deleting queued jobs, a worker can start at the same time, so this is not a reliable way to cancel work."
-      },
-      {
-        "kind": "heading",
-        "text": "Errors",
-        "id": "errors"
-      },
-      {
-        "kind": "paragraph",
-        "html": "404 means the job is missing or belongs to another key. 409 means it was processing when checked. 401 means the key is invalid."
-      },
-      {
-        "kind": "heading",
-        "text": "Data retention",
-        "id": "data-retention"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Deletion does not refund document quota. It does not undo AI processing or remove independent backups. There is no PDF-download, batch-delete or cancel API."
-      },
-      {
-        "kind": "paragraph",
-        "html": "The app does not automatically schedule deletion. The current bulk cleanup script looks only at the latest 100 jobs and can miss older data. Agree on a retention policy with the service owner."
-      }
-    ],
-    "search": "\n## Path parameter\n| Parameter | Required | Meaning |\n|---|---|---|\n| job_id | Yes | The ID of a job owned by your key. |\n\n## Response\nHTTP 204 means deletion succeeded. The response has no body, so do not try to read JSON from it. The local PDF and job/result record are removed. There is no restore API.\n\n## When to delete\nDelete only completed or failed jobs in your integration. A processing job returns 409. Although the code allows deleting queued jobs, a worker can start at the same time, so this is not a reliable way to cancel work.\n\n## Errors\n404 means the job is missing or belongs to another key. 409 means it was processing when checked. 401 means the key is invalid.\n\n## Data retention\nDeletion does not refund document quota. It does not undo AI processing or remove independent backups. There is no PDF-download, batch-delete or cancel API.\n\nThe app does not automatically schedule deletion. The current bulk cleanup script looks only at the latest 100 jobs and can miss older data. Agree on a retention policy with the service owner.\n",
+    "search": "\n## What this does\nDeletes everything in one extraction: the PDFs you uploaded, the records and the results. This cannot be undone.\n\n## What you get back\n| Code | What it means |\n|---|---|\n| 204 | Deleted. The response is empty, which is normal. |\n| 409 | Something is still being read. Wait for it to finish, then try again. |\n| 404 | That ID does not exist, or it belongs to a different key. |\n\n## Why you should use it\nYour uploaded PDFs stay on the server until something deletes them. Nothing removes them automatically.\n\nIf your documents contain private information, call this once your app has saved the fields it needs.\n",
     "method": "DELETE",
-    "path": "/api/jobs/{job_id}",
+    "path": "/api/v1/extractions/{extraction_id}",
     "success": "204 No Content",
     "auth": "Client API key required",
     "samples": [
       {
         "language": "cURL",
-        "code": "curl --fail-with-body -X DELETE \"https://papersignal.duckdns.org/api/jobs/{job_id}\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\""
+        "code": "curl --fail-with-body -X DELETE \"https://papersignal.duckdns.org/api/v1/extractions/{extraction_id}\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\""
       }
     ]
   },
   {
-    "id": "usage",
-    "title": "Usage and quotas",
+    "id": "account",
+    "title": "See your usage and limits",
     "group": "Extraction API",
-    "summary": "Check how many documents your key has used this month and how many remain.",
+    "summary": "Check how many documents you have used this month and how many are left.",
     "blocks": [
       {
         "kind": "heading",
-        "text": "Request",
-        "id": "request"
+        "text": "What this does",
+        "id": "what-this-does"
       },
       {
         "kind": "paragraph",
-        "html": "Send your client key. No body or query parameters are needed. This endpoint needs a key even when development mode allows anonymous calls."
+        "html": "Tells you about your own key: how many documents you may process this month, how many you have used, and how many requests per minute you may make."
       },
       {
         "kind": "heading",
-        "text": "Response",
-        "id": "response"
+        "text": "What you get back",
+        "id": "what-you-get-back"
       },
       {
         "kind": "code",
         "language": "json",
-        "text": "{\"api_key\":{\"id\":\"example-key-id\",\"name\":\"CRM production\",\n \"key_prefix\":\"ps_live_ABC123...\",\"rate_limit_per_minute\":60,\n \"monthly_document_quota\":1000,\"documents_this_month\":12,\n \"created_at\":\"2026-09-01T08:00:00+00:00\",\n \"last_used_at\":\"2026-09-08T08:00:00+00:00\",\"revoked_at\":null},\n \"period\":\"2026-09\",\"documents_this_month\":12,\n \"monthly_document_quota\":1000,\"documents_remaining\":988,\n \"rate_limit_per_minute\":60}"
+        "text": "{\"period\":\"2026-09\",\"documents_this_month\":143,\n \"monthly_document_quota\":5000,\"documents_remaining\":4857,\n \"rate_limit_per_minute\":120}"
+      },
+      {
+        "kind": "table",
+        "headers": [
+          "Field",
+          "What it means"
+        ],
+        "rows": [
+          [
+            "documents_this_month",
+            "Documents accepted so far this calendar month."
+          ],
+          [
+            "documents_remaining",
+            "How many more you can send before you get 402."
+          ],
+          [
+            "rate_limit_per_minute",
+            "How many requests you can make in any 60 seconds."
+          ]
+        ]
       },
       {
         "kind": "heading",
-        "text": "Document limit",
-        "id": "document-limit"
+        "text": "Two different limits",
+        "id": "two-different-limits"
       },
       {
         "kind": "paragraph",
-        "html": "An accepted document uses one unit when uploaded, even if extraction later fails. Rejected files do not add usage. Deleting a job does not refund usage."
+        "html": "<strong>Documents per month</strong> resets at the start of each month. Going over gives you 402 and nothing is processed."
       },
       {
         "kind": "paragraph",
-        "html": "The period is a calendar month in UTC, shown as YYYY-MM. The next month starts a new count. Unused allowance does not carry over. A 402 response means the requested upload would exceed the monthly limit; it is not a payment page."
+        "html": "<strong>Requests per minute</strong> is about how fast you call, not how many PDFs you send. Going over gives you 429 with a Retry-After header telling you how long to wait."
+      },
+      {
+        "kind": "paragraph",
+        "html": "A rejected or damaged file does not count against your monthly total."
       },
       {
         "kind": "heading",
-        "text": "Request limit",
-        "id": "request-limit"
+        "text": "Good practice",
+        "id": "good-practice"
       },
       {
         "kind": "paragraph",
-        "html": "Uploads, status checks, usage checks and deletes share one limit for the same key. At one check every three seconds, one polling stream uses about 20 requests per minute. Use batch checks for many jobs."
-      },
-      {
-        "kind": "paragraph",
-        "html": "429 from the rate limiter includes Retry-After in seconds. Public health/docs and admin calls do not use this client rate limit."
-      },
-      {
-        "kind": "heading",
-        "text": "Current limitations",
-        "id": "current-limitations"
-      },
-      {
-        "kind": "paragraph",
-        "html": "The quota check and usage update happen separately. Simultaneous uploads can exceed the intended limit. Batch page counters can also include files rejected by a full queue. Do not use these counters as an exact billing system without fixes."
+        "html": "Check this before sending a large batch so you do not run out halfway. You can also show the remaining count in your own admin screen."
       }
     ],
-    "search": "\n## Request\nSend your client key. No body or query parameters are needed. This endpoint needs a key even when development mode allows anonymous calls.\n\n## Response\n```json\n{\"api_key\":{\"id\":\"example-key-id\",\"name\":\"CRM production\",\n \"key_prefix\":\"ps_live_ABC123...\",\"rate_limit_per_minute\":60,\n \"monthly_document_quota\":1000,\"documents_this_month\":12,\n \"created_at\":\"2026-09-01T08:00:00+00:00\",\n \"last_used_at\":\"2026-09-08T08:00:00+00:00\",\"revoked_at\":null},\n \"period\":\"2026-09\",\"documents_this_month\":12,\n \"monthly_document_quota\":1000,\"documents_remaining\":988,\n \"rate_limit_per_minute\":60}\n```\n## Document limit\nAn accepted document uses one unit when uploaded, even if extraction later fails. Rejected files do not add usage. Deleting a job does not refund usage.\n\nThe period is a calendar month in UTC, shown as YYYY-MM. The next month starts a new count. Unused allowance does not carry over. A 402 response means the requested upload would exceed the monthly limit; it is not a payment page.\n\n## Request limit\nUploads, status checks, usage checks and deletes share one limit for the same key. At one check every three seconds, one polling stream uses about 20 requests per minute. Use batch checks for many jobs.\n\n429 from the rate limiter includes Retry-After in seconds. Public health/docs and admin calls do not use this client rate limit.\n\n## Current limitations\nThe quota check and usage update happen separately. Simultaneous uploads can exceed the intended limit. Batch page counters can also include files rejected by a full queue. Do not use these counters as an exact billing system without fixes.\n",
+    "search": "\n## What this does\nTells you about your own key: how many documents you may process this month, how many you have used, and how many requests per minute you may make.\n\n## What you get back\n```json\n{\"period\":\"2026-09\",\"documents_this_month\":143,\n \"monthly_document_quota\":5000,\"documents_remaining\":4857,\n \"rate_limit_per_minute\":120}\n```\n\n| Field | What it means |\n|---|---|\n| documents_this_month | Documents accepted so far this calendar month. |\n| documents_remaining | How many more you can send before you get 402. |\n| rate_limit_per_minute | How many requests you can make in any 60 seconds. |\n\n## Two different limits\n**Documents per month** resets at the start of each month. Going over gives you 402 and nothing is processed.\n\n**Requests per minute** is about how fast you call, not how many PDFs you send. Going over gives you 429 with a Retry-After header telling you how long to wait.\n\nA rejected or damaged file does not count against your monthly total.\n\n## Good practice\nCheck this before sending a large batch so you do not run out halfway. You can also show the remaining count in your own admin screen.\n",
     "method": "GET",
-    "path": "/api/usage",
+    "path": "/api/v1/account",
     "success": "200 OK",
     "auth": "Client API key required",
     "samples": [
       {
         "language": "cURL",
-        "code": "curl --fail-with-body \"https://papersignal.duckdns.org/api/usage\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\""
+        "code": "curl --fail-with-body \"https://papersignal.duckdns.org/api/v1/account\" \\\n  -H \"X-API-Key: $PAPERSIGNAL_API_KEY\""
       }
     ]
   },
@@ -1309,224 +1065,82 @@ export const DOC_PAGES: DocPage[] = [
     "id": "create-key",
     "title": "Create an API key",
     "group": "Administration",
-    "summary": "Service owners use this API to give another application its own key.",
+    "summary": "Service owners use this to give another application its own key.",
     "blocks": [
       {
         "kind": "heading",
-        "text": "Admin access",
-        "id": "admin-access"
+        "text": "Who this is for",
+        "id": "who-this-is-for"
       },
       {
         "kind": "paragraph",
-        "html": "Use X-Admin-Token, not a client API key. Never send the admin token to end users."
+        "html": "Only the person running the service. It needs the <code>X-Admin-Token</code> header, which is a different secret from a client API key. A client key cannot call this."
       },
       {
         "kind": "heading",
-        "text": "Request body",
-        "id": "request-body"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Use Content-Type: application/json."
-      },
-      {
-        "kind": "table",
-        "headers": [
-          "Field",
-          "Required",
-          "Allowed value"
-        ],
-        "rows": [
-          [
-            "name",
-            "Yes",
-            "1-120 characters. Spaces alone are not allowed."
-          ],
-          [
-            "rate_limit_per_minute",
-            "No",
-            "Integer from 1 to 10,000."
-          ],
-          [
-            "monthly_document_quota",
-            "No",
-            "Integer from 1 to 10,000,000."
-          ]
-        ]
-      },
-      {
-        "kind": "paragraph",
-        "html": "If a limit is missing or null, the server uses its default for new keys."
+        "text": "What to send",
+        "id": "what-to-send"
       },
       {
         "kind": "code",
         "language": "json",
-        "text": "{\"name\":\"CRM production\",\"rate_limit_per_minute\":60,\"monthly_document_quota\":1000}"
-      },
-      {
-        "kind": "heading",
-        "text": "Save the key now",
-        "id": "save-the-key-now"
+        "text": "{\"name\":\"Acme Corp\",\"rate_limit_per_minute\":60,\"monthly_document_quota\":200}"
       },
       {
         "kind": "paragraph",
-        "html": "HTTP 201 returns key and api_key. key is the full secret value and is shown only once. api_key contains the ID, name, display prefix, limits, usage and timestamps."
+        "html": "Only <code>name</code> is required. The other two fall back to the service defaults."
+      },
+      {
+        "kind": "heading",
+        "text": "What you get back",
+        "id": "what-you-get-back"
       },
       {
         "kind": "code",
         "language": "json",
-        "text": "{\"key\":\"<NEW_RAW_KEY>\",\"api_key\":{\"id\":\"example-key-id\",\n \"name\":\"CRM production\",\"key_prefix\":\"ps_live_ABC123...\",\n \"rate_limit_per_minute\":60,\"monthly_document_quota\":1000,\n \"documents_this_month\":0,\"created_at\":\"2026-09-08T08:00:00+00:00\",\n \"last_used_at\":null,\"revoked_at\":null}}"
+        "text": "{\"key\":\"ps_live_xxxxxxxxxxxxxxxxxxxx\",\n \"api_key\":{\"id\":\"key-1\",\"name\":\"Acme Corp\",\"key_prefix\":\"ps_live_xxxxxx...\",\n            \"rate_limit_per_minute\":60,\"monthly_document_quota\":200}}"
       },
       {
         "kind": "paragraph",
-        "html": "The server stores a hash, not the full key. You cannot retrieve a lost key. A new key cannot access jobs created by an older key."
+        "html": "<strong>The key is shown once and never again.</strong> Only a scrambled version is stored, so even someone who copies the database cannot use it. If a key is lost, create a new one."
       },
       {
         "kind": "heading",
-        "text": "Errors",
-        "id": "errors"
+        "text": "Give every application its own key",
+        "id": "give-every-application-its-own-key"
       },
       {
         "kind": "paragraph",
-        "html": "401: wrong or missing admin token. 503: admin access is not configured. 422: invalid input. There is no API to change an existing key&#x27;s quota or move its jobs to another key."
+        "html": "One key per application. Each key sees only its own documents, has its own limits, and can be switched off without affecting anyone else."
+      },
+      {
+        "kind": "heading",
+        "text": "Viewing and switching off keys",
+        "id": "viewing-and-switching-off-keys"
+      },
+      {
+        "kind": "paragraph",
+        "html": "These are not available over the internet, on purpose. The owner runs them on the server:"
+      },
+      {
+        "kind": "code",
+        "language": "bash",
+        "text": "python manage_keys.py list\npython manage_keys.py revoke <key_id>"
+      },
+      {
+        "kind": "paragraph",
+        "html": "Keeping this off the network means that even if the admin token leaked, nobody could switch off every client&#x27;s access."
       }
     ],
-    "search": "\n## Admin access\nUse X-Admin-Token, not a client API key. Never send the admin token to end users.\n\n## Request body\nUse Content-Type: application/json.\n| Field | Required | Allowed value |\n|---|---|---|\n| name | Yes | 1-120 characters. Spaces alone are not allowed. |\n| rate_limit_per_minute | No | Integer from 1 to 10,000. |\n| monthly_document_quota | No | Integer from 1 to 10,000,000. |\n\nIf a limit is missing or null, the server uses its default for new keys.\n```json\n{\"name\":\"CRM production\",\"rate_limit_per_minute\":60,\"monthly_document_quota\":1000}\n```\n## Save the key now\nHTTP 201 returns key and api_key. key is the full secret value and is shown only once. api_key contains the ID, name, display prefix, limits, usage and timestamps.\n```json\n{\"key\":\"<NEW_RAW_KEY>\",\"api_key\":{\"id\":\"example-key-id\",\n \"name\":\"CRM production\",\"key_prefix\":\"ps_live_ABC123...\",\n \"rate_limit_per_minute\":60,\"monthly_document_quota\":1000,\n \"documents_this_month\":0,\"created_at\":\"2026-09-08T08:00:00+00:00\",\n \"last_used_at\":null,\"revoked_at\":null}}\n```\nThe server stores a hash, not the full key. You cannot retrieve a lost key. A new key cannot access jobs created by an older key.\n\n## Errors\n401: wrong or missing admin token. 503: admin access is not configured. 422: invalid input. There is no API to change an existing key's quota or move its jobs to another key.\n",
+    "search": "\n## Who this is for\nOnly the person running the service. It needs the `X-Admin-Token` header, which is a different secret from a client API key. A client key cannot call this.\n\n## What to send\n```json\n{\"name\":\"Acme Corp\",\"rate_limit_per_minute\":60,\"monthly_document_quota\":200}\n```\nOnly `name` is required. The other two fall back to the service defaults.\n\n## What you get back\n```json\n{\"key\":\"ps_live_xxxxxxxxxxxxxxxxxxxx\",\n \"api_key\":{\"id\":\"key-1\",\"name\":\"Acme Corp\",\"key_prefix\":\"ps_live_xxxxxx...\",\n            \"rate_limit_per_minute\":60,\"monthly_document_quota\":200}}\n```\n\n**The key is shown once and never again.** Only a scrambled version is stored, so even someone who copies the database cannot use it. If a key is lost, create a new one.\n\n## Give every application its own key\nOne key per application. Each key sees only its own documents, has its own limits, and can be switched off without affecting anyone else.\n\n## Viewing and switching off keys\nThese are not available over the internet, on purpose. The owner runs them on the server:\n```bash\npython manage_keys.py list\npython manage_keys.py revoke <key_id>\n```\nKeeping this off the network means that even if the admin token leaked, nobody could switch off every client's access.\n",
     "method": "POST",
-    "path": "/api/admin/keys",
+    "path": "/api/v1/keys",
     "success": "201 Created",
-    "auth": "Service operator only · X-Admin-Token",
+    "auth": "Service operator only - X-Admin-Token",
     "samples": [
       {
         "language": "cURL",
-        "code": "curl --fail-with-body https://papersignal.duckdns.org/api/admin/keys \\\n  -H \"X-Admin-Token: $PAPERSIGNAL_ADMIN_TOKEN\" \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\":\"CRM production\",\"rate_limit_per_minute\":60,\"monthly_document_quota\":1000}' "
-      }
-    ]
-  },
-  {
-    "id": "list-keys",
-    "title": "List API keys",
-    "group": "Administration",
-    "summary": "Service owners can view issued keys and their current-month usage.",
-    "blocks": [
-      {
-        "kind": "heading",
-        "text": "Request",
-        "id": "request"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Send X-Admin-Token. No body or query parameters are needed."
-      },
-      {
-        "kind": "heading",
-        "text": "Response",
-        "id": "response"
-      },
-      {
-        "kind": "paragraph",
-        "html": "HTTP 200 returns key records, newest first. Disabled keys are included. An empty list means no keys have been issued."
-      },
-      {
-        "kind": "code",
-        "language": "json",
-        "text": "[]"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Each record has id, name, key_prefix, rate_limit_per_minute, monthly_document_quota, documents_this_month, created_at, last_used_at and revoked_at. The full secret key is never returned."
-      },
-      {
-        "kind": "paragraph",
-        "html": "Use the id when you need to disable a key. key_prefix is only a short label for display. There is no pagination."
-      },
-      {
-        "kind": "heading",
-        "text": "Client usage",
-        "id": "client-usage"
-      },
-      {
-        "kind": "paragraph",
-        "html": "An ordinary API user should call <a href=\"/documentation/usage\">GET /api/usage</a> to see their own usage. A client key cannot list other keys."
-      },
-      {
-        "kind": "heading",
-        "text": "Errors",
-        "id": "errors"
-      },
-      {
-        "kind": "paragraph",
-        "html": "401 means wrong or missing admin token. 503 means ADMIN_TOKEN is not configured on the server."
-      }
-    ],
-    "search": "\n## Request\nSend X-Admin-Token. No body or query parameters are needed.\n\n## Response\nHTTP 200 returns key records, newest first. Disabled keys are included. An empty list means no keys have been issued.\n```json\n[]\n```\nEach record has id, name, key_prefix, rate_limit_per_minute, monthly_document_quota, documents_this_month, created_at, last_used_at and revoked_at. The full secret key is never returned.\n\nUse the id when you need to disable a key. key_prefix is only a short label for display. There is no pagination.\n\n## Client usage\nAn ordinary API user should call [GET /api/usage](/documentation/usage) to see their own usage. A client key cannot list other keys.\n\n## Errors\n401 means wrong or missing admin token. 503 means ADMIN_TOKEN is not configured on the server.\n",
-    "method": "GET",
-    "path": "/api/admin/keys",
-    "success": "200 OK",
-    "auth": "Service operator only · X-Admin-Token",
-    "samples": [
-      {
-        "language": "cURL",
-        "code": "curl --fail-with-body \"https://papersignal.duckdns.org/api/admin/keys\" \\\n  -H \"X-Admin-Token: $PAPERSIGNAL_ADMIN_TOKEN\""
-      }
-    ]
-  },
-  {
-    "id": "revoke-key",
-    "title": "Revoke an API key",
-    "group": "Administration",
-    "summary": "Disable a client key so it cannot make more API requests.",
-    "blocks": [
-      {
-        "kind": "heading",
-        "text": "Request",
-        "id": "request"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Send X-Admin-Token. Replace {key_id} with the ID from key creation or key listing. Do not put the full secret key or display prefix in the URL."
-      },
-      {
-        "kind": "heading",
-        "text": "Response",
-        "id": "response"
-      },
-      {
-        "kind": "paragraph",
-        "html": "HTTP 204 has no body and means the key was disabled. Future requests with that key return 401."
-      },
-      {
-        "kind": "paragraph",
-        "html": "This does not cancel jobs already accepted, delete files, or move jobs to another key."
-      },
-      {
-        "kind": "heading",
-        "text": "Errors",
-        "id": "errors"
-      },
-      {
-        "kind": "paragraph",
-        "html": "404: unknown key ID. 409: the key is already disabled. 401: wrong or missing admin token. 503: admin access is not configured."
-      },
-      {
-        "kind": "heading",
-        "text": "Replacing a key",
-        "id": "replacing-a-key"
-      },
-      {
-        "kind": "paragraph",
-        "html": "Save needed results before disabling the old key. A new key cannot read the old key&#x27;s jobs. There is no API to re-enable a key, rotate it while preserving its owner ID, or transfer its jobs."
-      }
-    ],
-    "search": "\n## Request\nSend X-Admin-Token. Replace {key_id} with the ID from key creation or key listing. Do not put the full secret key or display prefix in the URL.\n\n## Response\nHTTP 204 has no body and means the key was disabled. Future requests with that key return 401.\n\nThis does not cancel jobs already accepted, delete files, or move jobs to another key.\n\n## Errors\n404: unknown key ID. 409: the key is already disabled. 401: wrong or missing admin token. 503: admin access is not configured.\n\n## Replacing a key\nSave needed results before disabling the old key. A new key cannot read the old key's jobs. There is no API to re-enable a key, rotate it while preserving its owner ID, or transfer its jobs.\n",
-    "method": "DELETE",
-    "path": "/api/admin/keys/{key_id}",
-    "success": "204 No Content",
-    "auth": "Service operator only · X-Admin-Token",
-    "samples": [
-      {
-        "language": "cURL",
-        "code": "curl --fail-with-body -X DELETE \"https://papersignal.duckdns.org/api/admin/keys/{key_id}\" \\\n  -H \"X-Admin-Token: $PAPERSIGNAL_ADMIN_TOKEN\""
+        "code": "curl --fail-with-body \"https://papersignal.duckdns.org/api/v1/keys\" \\\n  -H \"X-Admin-Token: $PAPERSIGNAL_ADMIN_TOKEN\""
       }
     ]
   },
@@ -1680,8 +1294,8 @@ export const DOC_PAGES: DocPage[] = [
         ],
         "rows": [
           [
-            "id, batch_id",
-            "Job ID and optional batch ID."
+            "id, extraction_id",
+            "The document&#x27;s own ID, and the extraction it belongs to."
           ],
           [
             "file_name, file_size",
@@ -1786,10 +1400,10 @@ export const DOC_PAGES: DocPage[] = [
       },
       {
         "kind": "paragraph",
-        "html": "Use <a href=\"/documentation/get-job\">one job</a>, <a href=\"/documentation/get-batch\">one batch</a>, or <a href=\"/documentation/get-many\">up to 50 IDs</a>. Use <a href=\"/documentation/list-jobs\">recent jobs</a> for a short history. Save job IDs in your own database for complete tracking."
+        "html": "Use <a href=\"/documentation/results-endpoint\">one job</a>, <a href=\"/documentation/results-endpoint\">one batch</a>, or <a href=\"/documentation/results-endpoint\">up to 50 IDs</a>. Use <a href=\"/documentation/results-endpoint\">recent jobs</a> for a short history. Save job IDs in your own database for complete tracking."
       }
     ],
-    "search": "\n## Job status\n| Status | Meaning |\n|---|---|\n| queued | Waiting for a worker. |\n| processing | Running. |\n| completed | Result is ready. |\n| failed | Work did not succeed. Read the error details. |\n\nBoth completed and failed can have progress 100. HTTP 200 on a status request only means the lookup worked.\n\n## Job fields\n| Field | Meaning |\n|---|---|\n| id, batch_id | Job ID and optional batch ID. |\n| file_name, file_size | Safe display filename and size in bytes. |\n| instruction | The fixed extraction instruction used by the server. |\n| output_template | The submitted schema as a string; may be null for old jobs. |\n| ocr_mode, schema_mode | Page-reading policy and schema mode. New jobs use json_schema. |\n| status, progress, stage | State, progress from 0-100, and a human-readable stage. |\n| result | null before success; extracted result after completion. |\n| error, failure_code, failure_stage | Failure details or null. |\n| page_count | Number of pages, or null. |\n| python_text_pages, ocr_pages | Page counts for embedded-text and OCR routes. |\n| vision_attempted_pages, vision_pages, vision_failed_pages | Vision attempts, successful reads and fallbacks. |\n| text_model, vision_model, ocr_model | Configured model names. A name here does not prove it was used. |\n| duration_ms | Worker time in milliseconds; excludes time waiting in the queue. |\n| created_at, updated_at | UTC timestamps in ISO-8601 format. |\n\nThe response does not include the local file path or owning key ID. Page counts are processing details, not accuracy scores. In never mode, python_text_pages includes empty pages too.\n\n## Inside result\n| Field | Meaning |\n|---|---|\n| data | The business values requested by your schema. |\n| evidence | Supporting text with label, page and evidence fields. Page is one-based or null. |\n| warnings | Messages from extraction. May be empty. |\n| request | The extraction instruction. |\n| document | File metadata, page-reading counts, model names, section count and duration. |\n\nUse result.data in your app. Evidence is generated by the model and may not cover every field. Empty warnings do not prove the values are correct.\n\n## Which lookup to use\nUse [one job](/documentation/get-job), [one batch](/documentation/get-batch), or [up to 50 IDs](/documentation/get-many). Use [recent jobs](/documentation/list-jobs) for a short history. Save job IDs in your own database for complete tracking.\n"
+    "search": "\n## Job status\n| Status | Meaning |\n|---|---|\n| queued | Waiting for a worker. |\n| processing | Running. |\n| completed | Result is ready. |\n| failed | Work did not succeed. Read the error details. |\n\nBoth completed and failed can have progress 100. HTTP 200 on a status request only means the lookup worked.\n\n## Job fields\n| Field | Meaning |\n|---|---|\n| id, extraction_id | The document's own ID, and the extraction it belongs to. |\n| file_name, file_size | Safe display filename and size in bytes. |\n| instruction | The fixed extraction instruction used by the server. |\n| output_template | The submitted schema as a string; may be null for old jobs. |\n| ocr_mode, schema_mode | Page-reading policy and schema mode. New jobs use json_schema. |\n| status, progress, stage | State, progress from 0-100, and a human-readable stage. |\n| result | null before success; extracted result after completion. |\n| error, failure_code, failure_stage | Failure details or null. |\n| page_count | Number of pages, or null. |\n| python_text_pages, ocr_pages | Page counts for embedded-text and OCR routes. |\n| vision_attempted_pages, vision_pages, vision_failed_pages | Vision attempts, successful reads and fallbacks. |\n| text_model, vision_model, ocr_model | Configured model names. A name here does not prove it was used. |\n| duration_ms | Worker time in milliseconds; excludes time waiting in the queue. |\n| created_at, updated_at | UTC timestamps in ISO-8601 format. |\n\nThe response does not include the local file path or owning key ID. Page counts are processing details, not accuracy scores. In never mode, python_text_pages includes empty pages too.\n\n## Inside result\n| Field | Meaning |\n|---|---|\n| data | The business values requested by your schema. |\n| evidence | Supporting text with label, page and evidence fields. Page is one-based or null. |\n| warnings | Messages from extraction. May be empty. |\n| request | The extraction instruction. |\n| document | File metadata, page-reading counts, model names, section count and duration. |\n\nUse result.data in your app. Evidence is generated by the model and may not cover every field. Empty warnings do not prove the values are correct.\n\n## Which lookup to use\nUse [one job](/documentation/results-endpoint), [one batch](/documentation/results-endpoint), or [up to 50 IDs](/documentation/results-endpoint). Use [recent jobs](/documentation/results-endpoint) for a short history. Save job IDs in your own database for complete tracking.\n"
   },
   {
     "id": "errors",
@@ -2090,11 +1704,11 @@ export const DOC_PAGES: DocPage[] = [
     "samples": [
       {
         "language": "Python",
-        "code": "\"\"\"Python 3.11+ single-PDF integration example; standard library only.\n\nUploads once. Only read requests are retried. Files are held in memory for this\nsmall-document example; use a streaming multipart client for large uploads.\n\"\"\"\nimport argparse\nimport json\nimport os\nfrom pathlib import Path\nimport secrets\nimport sys\nimport time\nfrom urllib.error import HTTPError, URLError\nfrom urllib.request import Request, urlopen\n\n\ndef request_json(url, key, *, body=None, content_type=None, timeout=60):\n    headers = {\"X-API-Key\": key, \"Accept\": \"application/json\"}\n    if content_type:\n        headers[\"Content-Type\"] = content_type\n    request = Request(url, data=body, headers=headers, method=\"POST\" if body is not None else \"GET\")\n    with urlopen(request, timeout=timeout) as response:\n        return json.load(response)\n\n\ndef upload(base, key, pdf, schema, ocr_mode):\n    boundary = \"papersignal-\" + secrets.token_hex(16)\n    parts = []\n    for name, value in ((\"output_template\", json.dumps(schema)), (\"ocr_mode\", ocr_mode)):\n        parts.append((f\"--{boundary}\\r\\nContent-Disposition: form-data; name=\\\"{name}\\\"\\r\\n\\r\\n\"\n                      f\"{value}\\r\\n\").encode())\n    # Constant upload filename avoids multipart-header injection from local paths.\n    parts.append((f\"--{boundary}\\r\\nContent-Disposition: form-data; name=\\\"file\\\"; \"\n                  \"filename=\\\"document.pdf\\\"\\r\\nContent-Type: application/pdf\\r\\n\\r\\n\").encode())\n    parts.extend((pdf.read_bytes(), f\"\\r\\n--{boundary}--\\r\\n\".encode()))\n    return request_json(base + \"/api/jobs\", key, body=b\"\".join(parts),\n                        content_type=f\"multipart/form-data; boundary={boundary}\", timeout=120)\n\n\ndef poll(base, key, job_id, max_wait=600, interval=3):\n    deadline = time.monotonic() + max_wait\n    failures = 0\n    while time.monotonic() < deadline:\n        delay = interval\n        try:\n            job = request_json(base + \"/api/jobs/\" + job_id, key,\n                               timeout=max(0.1, min(30, deadline - time.monotonic())))\n            failures = 0\n            if job[\"status\"] == \"completed\":\n                return job[\"result\"]\n            if job[\"status\"] == \"failed\":\n                raise RuntimeError(f\"Job {job_id} failed: {job.get('failure_code')} \"\n                                   f\"at {job.get('failure_stage')}. Retrieve the job for details.\")\n        except HTTPError as error:\n            if error.code != 429 and error.code not in (500, 502, 503, 504):\n                raise\n            failures += 1\n            retry_after = error.headers.get(\"Retry-After\", \"\")\n            delay = max(interval, float(retry_after)) if retry_after.isdigit() else min(30, 2 ** min(failures, 5))\n        except (URLError, TimeoutError):\n            failures += 1\n            delay = min(30, 2 ** min(failures, 5))\n        remaining = deadline - time.monotonic()\n        if remaining > 0:\n            time.sleep(min(delay, remaining))\n    raise TimeoutError(f\"Polling deadline reached. Job {job_id} may still be running; keep the ID and check later.\")\n\n\ndef main():\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument(\"pdf\", type=Path)\n    parser.add_argument(\"--schema\", type=Path, default=Path(__file__).with_name(\"invoice.schema.json\"))\n    parser.add_argument(\"--ocr-mode\", choices=(\"auto\", \"always\", \"never\"), default=\"auto\")\n    parser.add_argument(\"--wait-seconds\", type=float, default=600)\n    parser.add_argument(\"--poll-seconds\", type=float, default=3)\n    args = parser.parse_args()\n    if args.wait_seconds <= 0 or args.poll_seconds <= 0:\n        parser.error(\"Wait and polling seconds must be positive.\")\n    key = os.environ.get(\"PAPERSIGNAL_API_KEY\", \"\").strip()\n    if not key:\n        parser.error(\"Set PAPERSIGNAL_API_KEY in the backend environment.\")\n    base = os.environ.get(\"PAPERSIGNAL_BASE_URL\", \"https://papersignal.duckdns.org\").rstrip(\"/\")\n    schema = json.loads(args.schema.read_text(encoding=\"utf-8\"))\n    # Do not wrap uploads in a retry loop: an ambiguous failure may already have created work.\n    job = upload(base, key, args.pdf, schema, args.ocr_mode)\n    print(f\"Accepted job: {job['id']} (save this ID)\", file=sys.stderr, flush=True)\n    result = poll(base, key, job[\"id\"], args.wait_seconds, args.poll_seconds)\n    print(json.dumps(result, indent=2, ensure_ascii=False))\n\n\nif __name__ == \"__main__\":\n    try:\n        main()\n    except HTTPError as error:\n        print(f\"API HTTP {error.code}. See the integration guide; do not blindly retry an upload.\", file=sys.stderr)\n        raise SystemExit(1)\n    except (RuntimeError, URLError, TimeoutError, OSError, ValueError) as error:\n        print(str(error), file=sys.stderr)\n        raise SystemExit(1)\n"
+        "code": "\"\"\"Python 3.11+ single-PDF integration example; standard library only.\n\nUploads once. Only read requests are retried. Files are held in memory for this\nsmall-document example; use a streaming multipart client for large uploads.\n\"\"\"\nimport argparse\nimport json\nimport os\nfrom pathlib import Path\nimport secrets\nimport sys\nimport time\nfrom urllib.error import HTTPError, URLError\nfrom urllib.request import Request, urlopen\n\n\ndef request_json(url, key, *, body=None, content_type=None, timeout=60):\n    headers = {\"X-API-Key\": key, \"Accept\": \"application/json\"}\n    if content_type:\n        headers[\"Content-Type\"] = content_type\n    request = Request(url, data=body, headers=headers, method=\"POST\" if body is not None else \"GET\")\n    with urlopen(request, timeout=timeout) as response:\n        return json.load(response)\n\n\ndef upload(base, key, pdf, schema, ocr_mode):\n    boundary = \"papersignal-\" + secrets.token_hex(16)\n    parts = []\n    for name, value in ((\"output_template\", json.dumps(schema)), (\"ocr_mode\", ocr_mode)):\n        parts.append((f\"--{boundary}\\r\\nContent-Disposition: form-data; name=\\\"{name}\\\"\\r\\n\\r\\n\"\n                      f\"{value}\\r\\n\").encode())\n    # Constant upload filename avoids multipart-header injection from local paths.\n    parts.append((f\"--{boundary}\\r\\nContent-Disposition: form-data; name=\\\"files\\\"; \"\n                  \"filename=\\\"document.pdf\\\"\\r\\nContent-Type: application/pdf\\r\\n\\r\\n\").encode())\n    parts.extend((pdf.read_bytes(), f\"\\r\\n--{boundary}--\\r\\n\".encode()))\n    return request_json(base + \"/api/v1/extractions\", key, body=b\"\".join(parts),\n                        content_type=f\"multipart/form-data; boundary={boundary}\", timeout=120)\n\n\ndef poll(base, key, extraction_id, max_wait=600, interval=3):\n    deadline = time.monotonic() + max_wait\n    failures = 0\n    while time.monotonic() < deadline:\n        delay = interval\n        try:\n            documents = request_json(base + \"/api/v1/extractions/\" + extraction_id, key,\n                               timeout=max(0.1, min(30, deadline - time.monotonic())))\n            failures = 0\n            if all(d[\"status\"] in (\"completed\", \"failed\") for d in documents):\n                failed = [d for d in documents if d[\"status\"] == \"failed\"]\n                if failed:\n                    first = failed[0]\n                    raise RuntimeError(\n                        f\"{first['file_name']} failed: {first.get('failure_code')} \"\n                        f\"at {first.get('failure_stage')}. {first.get('error', '')}\")\n                return [d[\"result\"] for d in documents]\n        except HTTPError as error:\n            if error.code != 429 and error.code not in (500, 502, 503, 504):\n                raise\n            failures += 1\n            retry_after = error.headers.get(\"Retry-After\", \"\")\n            delay = max(interval, float(retry_after)) if retry_after.isdigit() else min(30, 2 ** min(failures, 5))\n        except (URLError, TimeoutError):\n            failures += 1\n            delay = min(30, 2 ** min(failures, 5))\n        remaining = deadline - time.monotonic()\n        if remaining > 0:\n            time.sleep(min(delay, remaining))\n    raise TimeoutError(f\"Polling deadline reached. Extraction {extraction_id} may still be running; keep the ID and check later.\")\n\n\ndef main():\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument(\"pdf\", type=Path)\n    parser.add_argument(\"--schema\", type=Path, default=Path(__file__).with_name(\"invoice.schema.json\"))\n    parser.add_argument(\"--ocr-mode\", choices=(\"auto\", \"always\", \"never\"), default=\"auto\")\n    parser.add_argument(\"--wait-seconds\", type=float, default=600)\n    parser.add_argument(\"--poll-seconds\", type=float, default=3)\n    args = parser.parse_args()\n    if args.wait_seconds <= 0 or args.poll_seconds <= 0:\n        parser.error(\"Wait and polling seconds must be positive.\")\n    key = os.environ.get(\"PAPERSIGNAL_API_KEY\", \"\").strip()\n    if not key:\n        parser.error(\"Set PAPERSIGNAL_API_KEY in the backend environment.\")\n    base = os.environ.get(\"PAPERSIGNAL_BASE_URL\", \"https://papersignal.duckdns.org\").rstrip(\"/\")\n    schema = json.loads(args.schema.read_text(encoding=\"utf-8\"))\n    # Do not wrap uploads in a retry loop: an ambiguous failure may already have created work.\n    batch = upload(base, key, args.pdf, schema, args.ocr_mode)\n    print(f\"Accepted extraction: {batch['extraction_id']} (save this ID)\", file=sys.stderr, flush=True)\n    result = poll(base, key, batch[\"extraction_id\"], args.wait_seconds, args.poll_seconds)\n    print(json.dumps(result, indent=2, ensure_ascii=False))\n\n\nif __name__ == \"__main__\":\n    try:\n        main()\n    except HTTPError as error:\n        print(f\"API HTTP {error.code}. See the integration guide; do not blindly retry an upload.\", file=sys.stderr)\n        raise SystemExit(1)\n    except (RuntimeError, URLError, TimeoutError, OSError, ValueError) as error:\n        print(str(error), file=sys.stderr)\n        raise SystemExit(1)\n"
       },
       {
         "language": "Node.js",
-        "code": "// Node.js 22+, native Fetch/FormData. This example buffers the PDF in memory.\n// Only polling requests are retried; uploads are sent exactly once.\nimport { readFile } from 'node:fs/promises';\nimport { pathToFileURL } from 'node:url';\n\nconst sleep = ms => new Promise(resolve => setTimeout(resolve, ms));\n\nexport async function upload(base, key, pdfPath, schema, ocrMode = 'auto') {\n  const form = new FormData();\n  form.append('file', new Blob([await readFile(pdfPath)], { type: 'application/pdf' }), 'document.pdf');\n  form.append('output_template', JSON.stringify(schema));\n  form.append('ocr_mode', ocrMode);\n  const response = await fetch(`${base}/api/jobs`, {\n    method: 'POST', headers: { 'X-API-Key': key }, body: form,\n    signal: AbortSignal.timeout(120_000),\n  });\n  if (!response.ok) throw new Error(`Upload HTTP ${response.status}. Check the integration guide before retrying.`);\n  return response.json();\n}\n\nexport async function poll(base, key, jobId, maxWaitMs = 600_000, intervalMs = 3_000) {\n  const deadline = Date.now() + maxWaitMs;\n  let failures = 0;\n  while (Date.now() < deadline) {\n    let response;\n    try {\n      response = await fetch(`${base}/api/jobs/${encodeURIComponent(jobId)}`, {\n        headers: { 'X-API-Key': key },\n        signal: AbortSignal.timeout(Math.max(1, Math.min(30_000, deadline - Date.now()))),\n      });\n    } catch (error) {\n      if (!(error instanceof TypeError) && !['TimeoutError', 'AbortError'].includes(error.name)) throw error;\n      const delay = Math.min(30_000, 1000 * 2 ** Math.min(++failures, 5));\n      await sleep(Math.max(0, Math.min(delay, deadline - Date.now())));\n      continue;\n    }\n    if (response.status === 429 || [500, 502, 503, 504].includes(response.status)) {\n      const raw = response.headers.get('Retry-After');\n      const fallback = Math.min(30_000, 1000 * 2 ** Math.min(++failures, 5));\n      const delay = raw && /^\\d+$/.test(raw) ? Math.max(intervalMs, Number(raw) * 1000) : fallback;\n      await response.body?.cancel();\n      await sleep(Math.max(0, Math.min(delay, deadline - Date.now())));\n      continue;\n    }\n    if (!response.ok) throw new Error(`Polling HTTP ${response.status}; job ${jobId}.`);\n    const job = await response.json();\n    failures = 0;\n    if (job.status === 'completed') return job.result;\n    if (job.status === 'failed') throw new Error(`Job ${jobId} failed: ${job.failure_code} at ${job.failure_stage}. Retrieve job details.`);\n    await sleep(Math.max(0, Math.min(intervalMs, deadline - Date.now())));\n  }\n  throw new Error(`Polling deadline reached. Job ${jobId} may still be running; keep the ID and check later.`);\n}\n\nasync function main() {\n  const pdfPath = process.argv[2];\n  const key = process.env.PAPERSIGNAL_API_KEY?.trim();\n  if (!pdfPath || !key) throw new Error('Set PAPERSIGNAL_API_KEY, then run: node node_client.mjs document.pdf [schema.json]');\n  const base = (process.env.PAPERSIGNAL_BASE_URL || 'https://papersignal.duckdns.org').replace(/\\/+$/, '');\n  const schema = JSON.parse(await readFile(process.argv[3] || new URL('./invoice.schema.json', import.meta.url), 'utf8'));\n  const job = await upload(base, key, pdfPath, schema);\n  console.error(`Accepted job: ${job.id} (save this ID)`);\n  console.log(JSON.stringify(await poll(base, key, job.id), null, 2));\n}\n\nif (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {\n  main().catch(error => { console.error(error.message); process.exitCode = 1; });\n}\n"
+        "code": "// Node.js 22+, native Fetch/FormData. This example buffers the PDF in memory.\n// Only polling requests are retried; uploads are sent exactly once.\nimport { readFile } from 'node:fs/promises';\nimport { pathToFileURL } from 'node:url';\n\nconst sleep = ms => new Promise(resolve => setTimeout(resolve, ms));\n\nexport async function upload(base, key, pdfPath, schema, ocrMode = 'auto') {\n  const form = new FormData();\n  form.append('files', new Blob([await readFile(pdfPath)], { type: 'application/pdf' }), 'document.pdf');\n  form.append('output_template', JSON.stringify(schema));\n  form.append('ocr_mode', ocrMode);\n  const response = await fetch(`${base}/api/v1/extractions`, {\n    method: 'POST', headers: { 'X-API-Key': key }, body: form,\n    signal: AbortSignal.timeout(120_000),\n  });\n  if (!response.ok) throw new Error(`Upload HTTP ${response.status}. Check the integration guide before retrying.`);\n  return response.json();\n}\n\nexport async function poll(base, key, extractionId, maxWaitMs = 600_000, intervalMs = 3_000) {\n  const deadline = Date.now() + maxWaitMs;\n  let failures = 0;\n  while (Date.now() < deadline) {\n    let response;\n    try {\n      response = await fetch(`${base}/api/v1/extractions/${encodeURIComponent(extractionId)}`, {\n        headers: { 'X-API-Key': key },\n        signal: AbortSignal.timeout(Math.max(1, Math.min(30_000, deadline - Date.now()))),\n      });\n    } catch (error) {\n      if (!(error instanceof TypeError) && !['TimeoutError', 'AbortError'].includes(error.name)) throw error;\n      const delay = Math.min(30_000, 1000 * 2 ** Math.min(++failures, 5));\n      await sleep(Math.max(0, Math.min(delay, deadline - Date.now())));\n      continue;\n    }\n    if (response.status === 429 || [500, 502, 503, 504].includes(response.status)) {\n      const raw = response.headers.get('Retry-After');\n      const fallback = Math.min(30_000, 1000 * 2 ** Math.min(++failures, 5));\n      const delay = raw && /^\\d+$/.test(raw) ? Math.max(intervalMs, Number(raw) * 1000) : fallback;\n      await response.body?.cancel();\n      await sleep(Math.max(0, Math.min(delay, deadline - Date.now())));\n      continue;\n    }\n    if (!response.ok) throw new Error(`Polling HTTP ${response.status}; extraction ${extractionId}.`);\n    const documents = await response.json();\n    failures = 0;\n    if (documents.every(d => d.status === 'completed' || d.status === 'failed')) {\n      const failed = documents.find(d => d.status === 'failed');\n      if (failed) throw new Error(`${failed.file_name} failed: ${failed.failure_code} at ${failed.failure_stage}. ${failed.error ?? ''}`);\n      return documents.map(d => d.result);\n    }\n    await sleep(Math.max(0, Math.min(intervalMs, deadline - Date.now())));\n  }\n  throw new Error(`Polling deadline reached. Extraction ${extractionId} may still be running; keep the ID and check later.`);\n}\n\nasync function main() {\n  const pdfPath = process.argv[2];\n  const key = process.env.PAPERSIGNAL_API_KEY?.trim();\n  if (!pdfPath || !key) throw new Error('Set PAPERSIGNAL_API_KEY, then run: node node_client.mjs document.pdf [schema.json]');\n  const base = (process.env.PAPERSIGNAL_BASE_URL || 'https://papersignal.duckdns.org').replace(/\\/+$/, '');\n  const schema = JSON.parse(await readFile(process.argv[3] || new URL('./invoice.schema.json', import.meta.url), 'utf8'));\n  const batch = await upload(base, key, pdfPath, schema);\n  console.error(`Accepted extraction: ${batch.extraction_id} (save this ID)`);\n  console.log(JSON.stringify(await poll(base, key, batch.extraction_id), null, 2));\n}\n\nif (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {\n  main().catch(error => { console.error(error.message); process.exitCode = 1; });\n}\n"
       }
     ]
   },

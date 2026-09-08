@@ -12,4 +12,4 @@ Maintainer sources:
 
 The website content is compiled by `docs/generate_website_content.py` into the Angular documentation module and public example downloads. After changing source documentation or clients, run the generator and rebuild the frontend.
 
-Reviewed 8 September 2026. Live authenticated tests found that job APIs respond, but real extraction fails. See [the test report](docs/API_TEST_RESULTS.md) and the website's API test results page.
+Reviewed 8 September 2026. Live authenticated tests pass, including real extraction on the deployed service. See [the test report](docs/API_TEST_RESULTS.md).

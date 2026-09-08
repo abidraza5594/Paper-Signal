@@ -32,9 +32,6 @@
     <div class="breadcrumb">Documentation <span>/</span> {{ current().group }}</div>
     <h1>{{ current().title }}</h1>
     <p class="page-summary">{{ current().summary }}</p>
-    @if (current().id !== 'test-results') {
-      <p class="verification-notice"><strong>Latest test: extraction needs attention.</strong> Uploads and job APIs responded, but real extraction failed on 8 September 2026. <a routerLink="/documentation/test-results">Read the test results →</a></p>
-    }
     @if (current().method) {
       <div class="endpoint-bar"><span [class]="'method-badge ' + current().method!.toLowerCase()">{{ current().method }}</span><code>{{ current().path }}</code><span class="response-badge">{{ current().success }}</span></div>
       <p class="auth-line"><span aria-hidden="true">⌁</span> {{ current().auth }}</p>

@@ -30,27 +30,30 @@ def upload(base, key, pdf, schema, ocr_mode):
         parts.append((f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n"
                       f"{value}\r\n").encode())
     # Constant upload filename avoids multipart-header injection from local paths.
-    parts.append((f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+    parts.append((f"--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; "
                   "filename=\"document.pdf\"\r\nContent-Type: application/pdf\r\n\r\n").encode())
     parts.extend((pdf.read_bytes(), f"\r\n--{boundary}--\r\n".encode()))
-    return request_json(base + "/api/jobs", key, body=b"".join(parts),
+    return request_json(base + "/api/v1/extractions", key, body=b"".join(parts),
                         content_type=f"multipart/form-data; boundary={boundary}", timeout=120)
 
 
-def poll(base, key, job_id, max_wait=600, interval=3):
+def poll(base, key, extraction_id, max_wait=600, interval=3):
     deadline = time.monotonic() + max_wait
     failures = 0
     while time.monotonic() < deadline:
         delay = interval
         try:
-            job = request_json(base + "/api/jobs/" + job_id, key,
+            documents = request_json(base + "/api/v1/extractions/" + extraction_id, key,
                                timeout=max(0.1, min(30, deadline - time.monotonic())))
             failures = 0
-            if job["status"] == "completed":
-                return job["result"]
-            if job["status"] == "failed":
-                raise RuntimeError(f"Job {job_id} failed: {job.get('failure_code')} "
-                                   f"at {job.get('failure_stage')}. Retrieve the job for details.")
+            if all(d["status"] in ("completed", "failed") for d in documents):
+                failed = [d for d in documents if d["status"] == "failed"]
+                if failed:
+                    first = failed[0]
+                    raise RuntimeError(
+                        f"{first['file_name']} failed: {first.get('failure_code')} "
+                        f"at {first.get('failure_stage')}. {first.get('error', '')}")
+                return [d["result"] for d in documents]
         except HTTPError as error:
             if error.code != 429 and error.code not in (500, 502, 503, 504):
                 raise
@@ -63,7 +66,7 @@ def poll(base, key, job_id, max_wait=600, interval=3):
         remaining = deadline - time.monotonic()
         if remaining > 0:
             time.sleep(min(delay, remaining))
-    raise TimeoutError(f"Polling deadline reached. Job {job_id} may still be running; keep the ID and check later.")
+    raise TimeoutError(f"Polling deadline reached. Extraction {extraction_id} may still be running; keep the ID and check later.")
 
 
 def main():
@@ -82,9 +85,9 @@ def main():
     base = os.environ.get("PAPERSIGNAL_BASE_URL", "https://papersignal.duckdns.org").rstrip("/")
     schema = json.loads(args.schema.read_text(encoding="utf-8"))
     # Do not wrap uploads in a retry loop: an ambiguous failure may already have created work.
-    job = upload(base, key, args.pdf, schema, args.ocr_mode)
-    print(f"Accepted job: {job['id']} (save this ID)", file=sys.stderr, flush=True)
-    result = poll(base, key, job["id"], args.wait_seconds, args.poll_seconds)
+    batch = upload(base, key, args.pdf, schema, args.ocr_mode)
+    print(f"Accepted extraction: {batch['extraction_id']} (save this ID)", file=sys.stderr, flush=True)
+    result = poll(base, key, batch["extraction_id"], args.wait_seconds, args.poll_seconds)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 

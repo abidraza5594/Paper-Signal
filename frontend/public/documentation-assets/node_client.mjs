@@ -7,10 +7,10 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export async function upload(base, key, pdfPath, schema, ocrMode = 'auto') {
   const form = new FormData();
-  form.append('file', new Blob([await readFile(pdfPath)], { type: 'application/pdf' }), 'document.pdf');
+  form.append('files', new Blob([await readFile(pdfPath)], { type: 'application/pdf' }), 'document.pdf');
   form.append('output_template', JSON.stringify(schema));
   form.append('ocr_mode', ocrMode);
-  const response = await fetch(`${base}/api/jobs`, {
+  const response = await fetch(`${base}/api/v1/extractions`, {
     method: 'POST', headers: { 'X-API-Key': key }, body: form,
     signal: AbortSignal.timeout(120_000),
   });
@@ -18,13 +18,13 @@ export async function upload(base, key, pdfPath, schema, ocrMode = 'auto') {
   return response.json();
 }
 
-export async function poll(base, key, jobId, maxWaitMs = 600_000, intervalMs = 3_000) {
+export async function poll(base, key, extractionId, maxWaitMs = 600_000, intervalMs = 3_000) {
   const deadline = Date.now() + maxWaitMs;
   let failures = 0;
   while (Date.now() < deadline) {
     let response;
     try {
-      response = await fetch(`${base}/api/jobs/${encodeURIComponent(jobId)}`, {
+      response = await fetch(`${base}/api/v1/extractions/${encodeURIComponent(extractionId)}`, {
         headers: { 'X-API-Key': key },
         signal: AbortSignal.timeout(Math.max(1, Math.min(30_000, deadline - Date.now()))),
       });
@@ -42,14 +42,17 @@ export async function poll(base, key, jobId, maxWaitMs = 600_000, intervalMs = 3
       await sleep(Math.max(0, Math.min(delay, deadline - Date.now())));
       continue;
     }
-    if (!response.ok) throw new Error(`Polling HTTP ${response.status}; job ${jobId}.`);
-    const job = await response.json();
+    if (!response.ok) throw new Error(`Polling HTTP ${response.status}; extraction ${extractionId}.`);
+    const documents = await response.json();
     failures = 0;
-    if (job.status === 'completed') return job.result;
-    if (job.status === 'failed') throw new Error(`Job ${jobId} failed: ${job.failure_code} at ${job.failure_stage}. Retrieve job details.`);
+    if (documents.every(d => d.status === 'completed' || d.status === 'failed')) {
+      const failed = documents.find(d => d.status === 'failed');
+      if (failed) throw new Error(`${failed.file_name} failed: ${failed.failure_code} at ${failed.failure_stage}. ${failed.error ?? ''}`);
+      return documents.map(d => d.result);
+    }
     await sleep(Math.max(0, Math.min(intervalMs, deadline - Date.now())));
   }
-  throw new Error(`Polling deadline reached. Job ${jobId} may still be running; keep the ID and check later.`);
+  throw new Error(`Polling deadline reached. Extraction ${extractionId} may still be running; keep the ID and check later.`);
 }
 
 async function main() {
@@ -58,9 +61,9 @@ async function main() {
   if (!pdfPath || !key) throw new Error('Set PAPERSIGNAL_API_KEY, then run: node node_client.mjs document.pdf [schema.json]');
   const base = (process.env.PAPERSIGNAL_BASE_URL || 'https://papersignal.duckdns.org').replace(/\/+$/, '');
   const schema = JSON.parse(await readFile(process.argv[3] || new URL('./invoice.schema.json', import.meta.url), 'utf8'));
-  const job = await upload(base, key, pdfPath, schema);
-  console.error(`Accepted job: ${job.id} (save this ID)`);
-  console.log(JSON.stringify(await poll(base, key, job.id), null, 2));
+  const batch = await upload(base, key, pdfPath, schema);
+  console.error(`Accepted extraction: ${batch.extraction_id} (save this ID)`);
+  console.log(JSON.stringify(await poll(base, key, batch.extraction_id), null, 2));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

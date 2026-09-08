@@ -74,30 +74,30 @@ SCHEMA = json.loads((ROOT / 'examples/integration/invoice.schema.json').read_tex
 schema_str = json.dumps(SCHEMA, indent=2)
 small_schema = '{"type":"object","properties":{"totalAmount":{"type":"number"}}}'
 curl_upload = '''# Set PAPERSIGNAL_API_KEY privately in your environment.
-curl --fail-with-body https://papersignal.duckdns.org/api/jobs \\
+curl --fail-with-body https://papersignal.duckdns.org/api/v1/extractions \\
   -H "X-API-Key: $PAPERSIGNAL_API_KEY" \\
-  -F 'file=@invoice.pdf;type=application/pdf' \\
+  -F 'files=@invoice.pdf;type=application/pdf' \\
   -F 'output_template=<invoice.schema.json' \\
   -F 'ocr_mode=auto' '''.rstrip()
 node_upload = '''// Node.js 22+; run on your backend.
 import { readFile } from 'node:fs/promises';
 
 const form = new FormData();
-form.append('file', new Blob([await readFile('invoice.pdf')],
+form.append('files', new Blob([await readFile('invoice.pdf')],
   { type: 'application/pdf' }), 'invoice.pdf');
 form.append('output_template', JSON.stringify({
   type: 'object', properties: { totalAmount: { type: 'number' } }
 }));
 
-const response = await fetch('https://papersignal.duckdns.org/api/jobs', {
+const response = await fetch('https://papersignal.duckdns.org/api/v1/extractions', {
   method: 'POST',
   headers: { 'X-API-Key': process.env.PAPERSIGNAL_API_KEY },
   body: form,
   signal: AbortSignal.timeout(120_000)
 });
 if (!response.ok) throw new Error(`Upload HTTP ${response.status}`);
-const job = await response.json();
-console.log(job.id); // Persist this ID, then poll for the result. '''.rstrip()
+const batch = await response.json();
+console.log(batch.extraction_id); // Persist this ID, then poll for the result. '''.rstrip()
 python_upload = '''# Python with requests installed; run on your backend.
 import json, os, requests
 
@@ -107,7 +107,7 @@ schema = {
 }
 with open("invoice.pdf", "rb") as pdf:
     response = requests.post(
-        "https://papersignal.duckdns.org/api/jobs",
+        "https://papersignal.duckdns.org/api/v1/extractions",
         headers={"X-API-Key": os.environ["PAPERSIGNAL_API_KEY"]},
         files={"file": ("invoice.pdf", pdf, "application/pdf")},
         data={"output_template": json.dumps(schema), "ocr_mode": "auto"},
@@ -130,7 +130,7 @@ Use your own frontend and backend. PaperSignal handles PDF reading and structure
 - Build a background polling step; extraction is asynchronous.
 
 ## Choose your starting point
-[Follow the quick start](/documentation/quickstart) to submit your first document. [Explore the API reference](/documentation/upload) for exact fields and responses, or [download a complete client](/documentation/examples) for bounded polling and error handling.
+[Follow the quick start](/documentation/quickstart) to submit your first document. [Explore the API reference](/documentation/submit) for exact fields and responses, or [download a complete client](/documentation/examples) for bounded polling and error handling.
 
 ## What the service supports
 | Capability | Behavior |
@@ -157,24 +157,24 @@ Save this as invoice.schema.json beside your PDF. A schema declares fields and t
 ## 3 Submit your document
 Use the request example above with your PDF. cURL examples use Bash syntax. The Python tab uses requests; downloadable Python and Node clients need no third-party packages. Let your library generate the multipart boundary.
 
-The response is HTTP 202 with a queued job. Save its id immediately. Do not repeat an upload just because the response was lost: duplicates can consume quota.
+The response is HTTP 202 with an extraction_id and one queued entry per document. Save the extraction_id immediately. Do not repeat an upload just because the response was lost: duplicates can consume quota.
 
-## 4 Check the job
-Replace JOB_ID with the returned id. Poll around every three seconds for one stream, within your key's shared rate budget.
+## 4 Get the results
+Replace EXTRACTION_ID with the returned extraction_id. Poll around every two to three seconds, within your key's rate budget.
 ```bash
-curl --fail-with-body "https://papersignal.duckdns.org/api/jobs/JOB_ID" \\
+curl --fail-with-body "https://papersignal.duckdns.org/api/v1/extractions/EXTRACTION_ID" \\
   -H "X-API-Key: $PAPERSIGNAL_API_KEY"
 ```
-Continue while status is queued or processing. For completed, read result.data. For failed, inspect failure_code and failure_stage. Both outcomes can show progress 100. Use a deadline; client timeout does not cancel the job.
+The response is a list with one entry per document. Continue while any entry is queued or processing. For completed, read result.data. For failed, inspect failure_code and failure_stage. Both outcomes can show progress 100. Use a deadline; a client timeout does not cancel the work.
 
 ## 5 Use the result
 ```json
 {"invoiceNumber":"INV-123","invoiceDate":null,"totalAmount":1250,"currency":"INR"}
 ```
-This is an illustrative result.data object, not a live extraction. Validate dates, amounts and business rules before saving or acting on values. Retain the job ID for support.
+This is an illustrative result.data object, not a live extraction. Validate dates, amounts and business rules before saving or acting on values. Retain the extraction_id for support.
 
 ## Continue your integration
-[Download full clients](/documentation/examples) for upload and bounded polling. Use [batch submissions](/documentation/batch-upload) for multiple PDFs. Once the result is saved, follow your retention policy to [delete the document](/documentation/delete-job).
+[Download full clients](/documentation/examples) for upload and bounded polling. Use [batch submissions](/documentation/submit) for multiple PDFs. Once the result is saved, follow your retention policy to [delete the document](/documentation/delete).
 ''', samples=samples)
 page('authentication', 'Authentication', 'Getting started', 'Authenticate requests with a dedicated API key and keep each application’s documents scoped to its key.', '## Client headers\n' + SECTIONS[3])
 
@@ -194,177 +194,130 @@ def endpoint(id, title, method, path, success, summary, content, auth='Client AP
         if auth != 'Public endpoint; no key required': code += f' \\\n  -H "{header}"'
     page(id, title, group, summary, content, method=method, path=path, success=success, auth=auth, samples=[{'language':'cURL','code':code}])
 
-endpoint('health','Service health','GET','/api/health','200 OK','Check configured upload limits and whether the service requires authentication.', '## Response and limits\n' + SECTIONS[5], auth='Public endpoint; no key required')
-endpoint('upload','Submit a PDF','POST','/api/jobs','202 Accepted','Upload a single PDF and a JSON Schema. The response contains a job ID for tracking the extraction.', '''
+endpoint('health','Check the service is up','GET','/api/health','200 OK','See whether the service is running and read its current file, page and batch limits.', '## Response and limits\n' + SECTIONS[5], auth='Public endpoint; no key required')
+
+endpoint('submit','Send PDFs for extraction','POST','/api/v1/extractions','202 Accepted','Upload one or more PDFs with the JSON Schema of the fields you want. Returns an extraction ID to poll.', '''
+## What this does
+You send PDF files and a JSON Schema describing the fields you want back. The service accepts the work and returns straight away with an `extraction_id`. **The result is not in this response** - use [Get the results](/documentation/results-endpoint) with that ID.
+
 ## Request body
-Content-Type: multipart/form-data. Send PDF bytes, not a file URL or base64 JSON.
+Use `multipart/form-data`. Send the PDF bytes, not a URL or base64.
+
 | Field | Required | Description |
 |---|---|---|
-| file | Yes | One PDF file part, application/pdf |
-| output_template | Yes | JSON Schema as text, 2-12,000 characters |
+| files | Yes | One PDF file part per document. Repeat the field name for each file; do not use files[] |
+| output_template | Yes | Your JSON Schema, as text, 2-12,000 characters |
 | ocr_mode | No | auto (default), always or never |
 
-## Accepted response
-HTTP 202 returns a full job, with result null and batch_id null. This example uses a schema containing only totalAmount; output_template echoes the schema actually submitted.
+## Response
+HTTP 202 means the work was accepted, not finished. Every document starts as `queued`.
 ```json
-''' + json.dumps(job, indent=2) + '''
-```
-## Next step
-Save id against your business record, then [poll the job](/documentation/get-job). The result does not arrive in this upload response. See [output schemas](/documentation/schema) for supported types and [OCR modes](/documentation/schema#json-schema-and-ocr-policy) for reading behavior.
-
-## Errors
-400 indicates an invalid, empty, protected, corrupt, oversized or over-page-limit PDF. 422 indicates invalid/missing form fields or schema. 401 is invalid authentication; 402 is document quota exhaustion; 429 is request-rate or queue saturation; 503 indicates AI credentials are not configured.
-
-## Retry behavior
-There is no idempotency key. After a timeout, lost response or 5xx, work may already have been accepted. Reconcile before sending the same PDF again.
-''', code=curl_upload)
-PAGES[-1]['samples'] = samples
-endpoint('batch-upload','Submit a batch','POST','/api/jobs/batch','202 Accepted','Submit multiple PDFs with one schema and receive a separate job for each accepted file.', '''
-## Request body
-Use multipart/form-data. Repeat files for every PDF; do not use files[].
-| Field | Required | Description |
-|---|---|---|
-| files | Yes | Repeated PDF file parts, up to the configured file limit |
-| output_template | Yes | One JSON Schema text field, 2-12,000 characters |
-| ocr_mode | No | auto, always or never; default auto |
-
-## Partial acceptance
-Always inspect accepted_count, rejected_count and rejected. The example below abbreviates each job; accepted jobs use the same full response model as single submissions.
-```json
-{"batch_id":"example-batch-id","accepted_count":1,"rejected_count":1,
- "jobs":[{"id":"example-job-id","status":"queued","result":null}],
+{"extraction_id":"example-extraction-id","accepted_count":1,"rejected_count":1,
+ "jobs":[{"id":"example-document-id","extraction_id":"example-extraction-id",
+          "status":"queued","result":null}],
  "rejected":[{"file_name":"broken.pdf","error":"The uploaded file is not a valid PDF."}]}
 ```
-A 202 can contain zero accepted jobs. Do not poll that batch: no stored jobs means batch lookup returns 404. Queue-full rejections appear per file. One invalid file can be rejected while other files are accepted.
 
-## Batch constraints
-File-count and schema errors reject the request with 422. Excess combined size returns 413. Quota precheck includes all submitted files, even files that later fail validation. Accepted documents consume quota at submission; invalid/rejected files do not increment document usage.
+## One bad file does not lose the good ones
+Always check `accepted_count`, `rejected_count` and `rejected`. A corrupt, encrypted or over-long PDF is listed in `rejected` while the other files are accepted and processed. Rejected files do not count against your monthly quota.
 
-## Retrieve results
-Save the batch_id and every accepted job ID. [Poll the batch](/documentation/get-batch) or [poll selected IDs](/documentation/get-many). A batch does not merge documents into one business record.
+If `accepted_count` is 0 there is nothing to poll, and the extraction ID returns 404.
 
-Unexpected server errors can occur after some jobs have been enqueued. The batch is not transactional; do not automatically repeat the whole upload after a lost or failed response.
-''', code=curl_upload.replace('/api/jobs ', '/api/jobs/batch ').replace("-F 'file=@invoice.pdf;type=application/pdf'", "-F 'files=@invoice-a.pdf;type=application/pdf' \\\n  -F 'files=@invoice-b.pdf;type=application/pdf'"))
-endpoint('get-job','Retrieve a job','GET','/api/jobs/{job_id}','200 OK','Poll one job and retrieve its extraction result with the same key that submitted it.', '''
-## Path parameter
+## Limits
+More files than the configured limit returns 422. Combined size over the limit returns 413. An invalid JSON Schema returns 422. Quota exhaustion returns 402 and nothing is processed.
+
+## Before retrying
+There is no idempotency key. After a timeout or a lost response the work may already have been accepted. Check before sending the same PDFs again, or the documents are counted twice.
+''', code=curl_upload)
+PAGES[-1]['samples'] = samples
+
+endpoint('results-endpoint','Get the results','GET','/api/v1/extractions/{extraction_id}','200 OK','Poll the extraction ID until every document reports completed or failed, then read the extracted JSON.', '''
+## What this does
+Returns one entry per document you submitted. Call it every 2 seconds until every entry reports `completed` or `failed`.
+
 | Parameter | Required | Description |
 |---|---|---|
-| job_id | Yes | The id returned by submission; replace {job_id} in the URL |
+| extraction_id | Yes | The ID returned when you submitted the documents |
 
-## Response
-Returns one [job object](/documentation/results), including result when completed. Before completion result is null. Polling a failed job still returns 200; inspect status and failure_code.
+## Reading the response
 ```json
-{"id":"example-job-id","status":"completed","progress":100,
- "result":{"data":{"totalAmount":1250},"evidence":[],"warnings":[]}}
+[{"id":"example-document-id","extraction_id":"example-extraction-id",
+  "file_name":"invoice.pdf","status":"completed","progress":100,
+  "result":{"data":{"totalAmount":4500},"evidence":[],"warnings":[]}}]
 ```
-This abbreviated example omits other job fields and result metadata. See [the full result contract](/documentation/results).
 
-## Polling policy
-Start around every three seconds for one stream and adjust to the key's shared request budget. Handle 429 Retry-After with backoff. Stop at completed or failed, or at your application deadline. Keep the ID for later lookup when the deadline expires.
+`result.data` matches your schema exactly: the same keys, the same nesting, missing values as `null`, and anything outside the schema removed. `result.evidence` shows which page each value came from.
 
-## Errors
-404 means missing or inaccessible to this key. 401 means invalid authentication. A 429 may be caused by uploads, reads or polls from other callers using the same key.
+## Status values
+| Status | Meaning |
+|---|---|
+| queued | Waiting for a free worker |
+| processing | Being read and extracted; progress and stage update as it goes |
+| completed | Done. Read result.data |
+| failed | Did not finish. Read error and failure_code |
+
+## How long to wait
+A typical document takes 15-30 seconds. Two documents are processed at a time; the rest wait their turn. Poll every 2 seconds and stop after a deadline that suits you. Stopping does not cancel the work, and you can check the same ID later.
+
+## If a document failed
+The HTTP call still succeeds. Check each entry's `failure_code` to decide what to do; see [When something goes wrong](/documentation/errors).
+
+## Only your own documents
+An extraction ID created by a different API key returns 404, not 403. The service does not reveal that it exists.
 ''')
-endpoint('get-batch','Retrieve a batch','GET','/api/batches/{batch_id}','200 OK','Retrieve all jobs visible to your key within a submitted batch.', '''
-## Path parameter
+
+endpoint('delete','Delete documents and results','DELETE','/api/v1/extractions/{extraction_id}','204 No Content','Remove the uploaded PDFs and their results once your application has stored what it needs.', '''
+## What this does
+Deletes every document in the extraction: the stored PDF, the job record and the result. This cannot be undone.
+
 | Parameter | Required | Description |
 |---|---|---|
-| batch_id | Yes | Batch ID returned by POST /api/jobs/batch |
+| extraction_id | Yes | The ID returned when you submitted the documents |
 
-## Response
-An array of full job objects, ordered by creation time then ID. There is no batch wrapper, aggregate status or pagination. Match jobs by ID rather than array position.
-```json
-[
-  {"id":"example-job-a","status":"completed","result":{"data":{"totalAmount":1250}}},
-  {"id":"example-job-b","status":"processing","result":null}
-]
-```
-The example is abbreviated. Keep polling while any expected job is queued or processing. Completed and failed are terminal. One failed job does not imply all other jobs failed.
+## Responses
+| Code | Meaning |
+|---|---|
+| 204 | Deleted. The response body is empty |
+| 409 | At least one document is still processing. Wait for it to finish |
+| 404 | Unknown ID, or it belongs to another key |
 
-## Missing batches
-404 means no visible jobs remain, including an unknown batch, another key's batch, a submission with zero accepted files or a batch whose jobs were deleted. Persist accepted IDs and handle missing jobs explicitly.
+## Why this matters
+Uploaded PDFs stay on the server until something deletes them. If your documents are sensitive, call this once you have stored the result. There is no automatic retention policy.
 ''')
-endpoint('get-many','Retrieve selected jobs','GET','/api/jobs/batch?ids=id1,id2','200 OK','Check up to 50 supplied job IDs with one request to reduce polling traffic.', '''
-## Query parameter
-| Parameter | Required | Description |
-|---|---|---|
-| ids | Yes | Comma-separated nonempty job IDs; maximum 50 supplied nonempty IDs |
 
-## Response behavior
-Returns an array of full job objects. Duplicates are removed; input order is retained. Unknown or inaccessible jobs are silently omitted. If none are visible, the response is an empty array with HTTP 200.
-```json
-[]
-```
-Compare returned IDs against your expected IDs; an omitted job is not proof that processing completed. An empty/too-long list or missing ids returns 422.
-''')
-endpoint('list-jobs','List recent jobs','GET','/api/jobs?limit=20','200 OK','List the latest jobs belonging to your client key.', '''
-## Query parameter
-| Parameter | Required | Description |
-|---|---|---|
-| limit | No | Integer, defaults to 20; clamped to 1-100 |
+endpoint('account','See your usage and limits','GET','/api/v1/account','200 OK','Check your key rate limit, monthly document quota and how much is left this month.', '## Usage response\n' + SECTIONS[9])
 
-## Response
-An array of full job objects, newest first. If the key has no jobs, returns []. There is no offset, cursor, total count or full-history export endpoint. Maintain your application's own job-ID index for complete history.
+endpoint('create-key','Create an API key','POST','/api/v1/keys','201 Created','Issue a key for one client application. For the service operator only.', '''
+## Who can call this
+Only the service operator, using the `X-Admin-Token` header. That is a different secret from a client API key, and client keys cannot call this endpoint.
 
-## Reconcile an uncertain upload
-Recent jobs may help investigate a lost upload response. Filename is not unique; use your application's record of submission time and operator support before retrying. Do not infer exactly-once behavior from this list.
-''')
-endpoint('delete-job','Delete a job','DELETE','/api/jobs/{job_id}','204 No Content','Remove a stored PDF and its job/result record after your application has saved the result.', '## Deletion behavior\n' + SECTIONS[10])
-endpoint('usage','Usage and quotas','GET','/api/usage','200 OK','Read the client key’s current monthly document usage and shared request limit.', '## Usage response\n' + SECTIONS[9])
-
-endpoint('create-key','Create an API key','POST','/api/admin/keys','201 Created','Issue a dedicated credential for a consuming application. This operation is for the service operator.', '''
 ## Request body
-Content-Type: application/json. Use your private X-Admin-Token header.
-| Field | Required | Description |
-|---|---|---|
-| name | Yes | 1-120 characters; whitespace-only names rejected |
-| rate_limit_per_minute | No | Integer 1-10,000; omitted/null uses server default |
-| monthly_document_quota | No | Integer 1-10,000,000; omitted/null uses server default |
 ```json
-{"name":"CRM production","rate_limit_per_minute":60,"monthly_document_quota":1000}
+{"name":"Acme Corp","rate_limit_per_minute":60,"monthly_document_quota":200}
 ```
-## One-time credential
-201 returns a raw key and metadata. Store the raw key securely now; list operations never return it.
-```json
-{"key":"<NEW_RAW_KEY>","api_key":{"id":"example-key-id","name":"CRM production",
- "key_prefix":"ps_live_ABC123...","rate_limit_per_minute":60,
- "monthly_document_quota":1000,"documents_this_month":0,
- "created_at":"2026-09-08T08:00:00+00:00","last_used_at":null,"revoked_at":null}}
-```
-The service stores only a SHA-256 hash plus a display prefix. Give consumers the client key, never the admin token or Mistral credential.
+`rate_limit_per_minute` and `monthly_document_quota` are optional and fall back to the service defaults.
 
-## Errors and ownership
-401 means missing/incorrect admin token; 503 means admin HTTP management is unconfigured; 422 means invalid payload. A new key has a different owner and cannot access previous-key jobs. There is no quota-update or ownership-transfer endpoint.
-''', auth='Service operator only · X-Admin-Token', group='Administration', code='''curl --fail-with-body https://papersignal.duckdns.org/api/admin/keys \\
-  -H "X-Admin-Token: $PAPERSIGNAL_ADMIN_TOKEN" \\
-  -H 'Content-Type: application/json' \\
-  -d '{"name":"CRM production","rate_limit_per_minute":60,"monthly_document_quota":1000}' ''')
-endpoint('list-keys','List API keys','GET','/api/admin/keys','200 OK','Inspect client-key metadata, including revoked keys and current-month document usage.', '''
 ## Response
-Returns an array of key metadata, newest first. Each item has id, name, key_prefix, rate_limit_per_minute, monthly_document_quota, documents_this_month, created_at, last_used_at and revoked_at. There is no pagination and raw key values are never returned.
 ```json
-[]
+{"key":"ps_live_xxxxxxxxxxxxxxxxxxxx",
+ "api_key":{"id":"example-key-id","name":"Acme Corp",
+            "key_prefix":"ps_live_xxxxxx...","rate_limit_per_minute":60,
+            "monthly_document_quota":200,"documents_this_month":0}}
 ```
-An empty array indicates no issued keys. Use the metadata ID for revocation, not the display prefix. For consumer self-service usage, use [GET /api/usage](/documentation/usage).
 
-## Errors
-401: missing/incorrect admin token. 503: ADMIN_TOKEN is not configured on the service.
-''', auth='Service operator only · X-Admin-Token', group='Administration')
-endpoint('revoke-key','Revoke an API key','DELETE','/api/admin/keys/{key_id}','204 No Content','Disable a client key so subsequent requests are rejected.', '''
-## Path parameter
-| Parameter | Required | Description |
-|---|---|---|
-| key_id | Yes | Metadata ID from key creation or key listing; not the raw credential |
+**`key` is shown once and cannot be recovered.** Only a hash and a short display prefix are stored, so a stolen database cannot be used to call the API. If a key is lost, issue a new one.
 
-## Response and effect
-204 with an empty body means revocation succeeded. Subsequent requests using the key return 401. Accepted jobs are not cancelled, local PDFs/results are not deleted, and ownership is not transferred.
+## Listing and revoking keys
+These are deliberately not on the network. Run them on the server instead:
+```bash
+python manage_keys.py list
+python manage_keys.py revoke <key_id>
+```
+Keeping revocation off the network means a leaked admin token cannot disable every client's access.
 
-## Errors
-404: unknown key ID. 409: key already revoked. 401: wrong/missing admin token. 503: admin management is not configured.
-
-## Rotation planning
-A replacement key cannot read jobs created by the previous key. Retrieve needed results before revocation or implement an operator-controlled ownership migration. No un-revoke or rotation endpoint exists.
-''', auth='Service operator only · X-Admin-Token', group='Administration')
+## Give each client its own key
+One key per application. Each key sees only its own documents, carries its own rate limit and quota, and can be revoked without affecting anyone else.
+''', auth='Service operator only - X-Admin-Token', group='Administration')
 
 page('schema','Schemas and OCR','Integration guides','Define exactly which fields you need, understand null values, and choose the page-reading policy.', '## JSON Schema and OCR policy\n' + SECTIONS[7])
 page('results','Jobs and results','Integration guides','Understand the job lifecycle, output fields, evidence and processing diagnostics.', '## Reading jobs\n' + SECTIONS[8])
@@ -409,7 +362,7 @@ if test_report.exists():
     test_text = test_report.read_text(encoding='utf-8')
     test_text = re.sub(r'^# [^\n]+\n', '', test_text)
     page('test-results', 'API test results', 'Getting started',
-         'See what was tested, what worked, and what still needs attention.', test_text)
+         'What was tested on the live service, and what the results were.', test_text)
     report_page = PAGES.pop()
     PAGES.insert(2, report_page)
 

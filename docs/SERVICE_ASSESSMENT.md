@@ -27,7 +27,7 @@ No AWS settings, deployed code or client keys were changed. No customer document
 
 The operator supplies an HTTPS URL and dedicated client key. The consuming backend defines a JSON Schema, for example invoiceNumber, invoiceDate, totalAmount and currency, then uploads a PDF. It saves the returned job ID against its own business record/user and polls in a background task until completed or failed. On completion, it validates and saves result.data, then displays the result through its own frontend.
 
-The minimum workflow uses POST /api/jobs followed by GET /api/jobs/{job_id}. Multiple files use POST /api/jobs/batch, then GET /api/batches/{batch_id}. A batch applies one schema and returns a separate result per PDF. Always handle per-file rejection; HTTP 202 means accepted, not completed.
+The minimum workflow uses POST /api/v1/extractions followed by GET /api/v1/extractions/{extraction_id}. Multiple files use POST /api/v1/extractions, then GET /api/v1/extractions/{extraction_id}. A batch applies one schema and returns a separate result per PDF. Always handle per-file rejection; HTTP 202 means accepted, not completed.
 
 Python, Node.js, Java, .NET, PHP or another backend with HTTPS and multipart support can integrate. No shared database or embedded Angular frontend is required. Keep the shared key on the consuming backend, where user-level access is enforced.
 
@@ -36,17 +36,17 @@ Python, Node.js, Java, .NET, PHP or another backend with HTTPS and multipart sup
 | API | Purpose |
 |---|---|
 | GET /api/health | Configuration and configured upload limits |
-| POST /api/jobs | Submit one PDF and schema |
-| POST /api/jobs/batch | Submit multiple PDFs and report rejections |
-| GET /api/jobs/{job_id} | One job's status, result and diagnostics |
-| GET /api/batches/{batch_id} | All visible jobs in a batch |
-| GET /api/jobs/batch?ids=... | Check up to 50 supplied job IDs |
-| GET /api/jobs?limit=20 | List recent jobs, capped at 100 |
-| DELETE /api/jobs/{job_id} | Delete a local PDF and job/result |
-| GET /api/usage | Monthly documents, remaining quota and request limit |
-| POST /api/admin/keys | Operator issues a client key, shown once |
-| GET /api/admin/keys | Operator lists key metadata and usage |
-| DELETE /api/admin/keys/{key_id} | Operator revokes a client key |
+| POST /api/v1/extractions | Submit one PDF and schema |
+| POST /api/v1/extractions | Submit multiple PDFs and report rejections |
+| GET /api/v1/extractions/{extraction_id} | One job's status, result and diagnostics |
+| GET /api/v1/extractions/{extraction_id} | All visible jobs in a batch |
+| GET /api/v1/extractions/{extraction_id} | Check up to 50 supplied job IDs |
+| GET /api/v1/extractions/{extraction_id} | List recent jobs, capped at 100 |
+| DELETE /api/v1/extractions/{extraction_id} | Delete a local PDF and job/result |
+| GET /api/v1/account | Monthly documents, remaining quota and request limit |
+| POST /api/v1/keys | Operator issues a client key, shown once |
+| GET /api/v1/keys | Operator lists key metadata and usage |
+| DELETE /api/v1/keys | Operator revokes a client key |
 
 The companion API_INTEGRATION.md defines request fields, response examples, status codes and admin instructions. The handoff includes runnable Python and Node.js examples.
 

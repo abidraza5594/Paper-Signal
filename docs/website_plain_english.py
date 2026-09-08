@@ -16,8 +16,8 @@ Your app can call the API directly. You do not need to use the PaperSignal uploa
 
 ## How it works
 1. Send the PDF and your schema to PaperSignal.
-2. Save the job ID from the response. A job is the saved task for one PDF.
-3. Check the job every few seconds until it finishes.
+2. Save the extraction ID from the response.
+3. Check that ID every few seconds until every PDF is finished.
 4. Read result.data, check the values, and save them in your app.
 
 ## Start here
@@ -46,7 +46,7 @@ The server returns HTTP 202 and a job ID. This means the file was accepted. It d
 ## 4 Check the result
 Replace JOB_ID with the returned id. Repeat this request about every three seconds for one job, while staying within your key's request limit.
 ```bash
-curl --fail-with-body "https://papersignal.duckdns.org/api/jobs/JOB_ID" \\
+curl --fail-with-body "https://papersignal.duckdns.org/api/v1/extractions/JOB_ID" \\
   -H "X-API-Key: $PAPERSIGNAL_API_KEY"
 ```
 | status | What to do |
@@ -65,7 +65,7 @@ Set a time limit in your app. If you stop waiting, keep the job ID so you can ch
 This is an example of result.data. null means the value was not found or did not match the expected type. Check important values before saving or using them.
 
 ## Next steps
-[Download a full upload-and-check client](/documentation/examples). For several PDFs, use [batch upload](/documentation/batch-upload). Save your results before [deleting a job](/documentation/delete-job).
+[Download a full upload-and-check client](/documentation/examples). For several PDFs, use [batch upload](/documentation/submit). Save your results before [deleting a job](/documentation/delete).
 '''),
 'authentication': ('Authentication', 'Send your client API key with each protected request.', '''
 ## Send the key
@@ -95,279 +95,181 @@ A new key cannot read the old key's jobs. Save needed results before disabling t
 ## Development mode
 With REQUIRE_API_KEY=false, anonymous requests have no job-owner filter. This can expose existing jobs. Keep REQUIRE_API_KEY=true on a shared server.
 '''),
-'health': ('Service health', 'Check whether the API responds and read its configured limits.', '''
-## Request
-No key, body or query parameters are needed.
+'health': ('Check the service is up', 'See whether the service is running and what its current limits are.', '''
+## When to use this
+Call this before you start, or when something is not working, to confirm the service is reachable. This is the only endpoint that does not need an API key.
 
-## Response
-The server returns HTTP 200 with an object like this. Values can change when the owner changes the settings.
+## What you get back
 ```json
 {"status":"ok","ai_configured":true,"require_api_key":true,
- "max_upload_mb":200,"max_pdf_pages":40,"max_batch_files":10,
- "max_batch_total_mb":500,"text_model":"mistral-small-2603",
- "vision_model":"mistral-small-2603","ocr_model":"mistral-ocr-4-0"}
+ "max_upload_mb":200,"max_pdf_pages":40,"max_batch_files":10}
 ```
-## What the fields mean
-| Field | Meaning |
-|---|---|
-| status | ok means this API request succeeded. |
-| ai_configured | AI keys are saved in settings. This does not prove that AI extraction works. |
-| require_api_key | Whether protected routes require a client key. |
-| max_upload_mb | Maximum size of one PDF. |
-| max_pdf_pages | Maximum number of pages in one PDF. |
-| max_batch_files | Maximum number of files in one batch. |
-| max_batch_total_mb | Maximum combined file size allowed by the backend. |
-| text_model, vision_model, ocr_model | Model names in the server settings. |
 
-## A limit outside this response
-The web server in front of the API may allow a smaller request. The checked-in Caddy config allows 210MB per request, while the backend reports 500 MB per batch. The current live proxy limit has not been measured. Ask the owner before offering large uploads.
+| Field | What it tells you |
+|---|---|
+| status | "ok" means the service is running. |
+| require_api_key | true means every other endpoint needs your key. |
+| max_batch_files | How many PDFs you can send in one request. |
+| max_upload_mb | The largest single PDF you can send. |
+| max_pdf_pages | The most pages one PDF can have. |
+| ai_configured | false means the owner has not set up the AI provider yet. |
+
+Read the limits from here instead of hard-coding them. The owner can change them.
 '''),
-'upload': ('Submit a PDF', 'Send one PDF and the fields you want. Get a job ID to check later.', '''
-## Request body
+'submit': ('Send PDFs for extraction', 'Upload your PDFs and the list of fields you want. You get an ID to check later.', '''
+## What this does
+You send your PDF files and a JSON Schema saying which fields you want. The service takes the work and answers straight away with an extraction ID.
+
+**The result is not in this response.** Reading a PDF takes 15 to 30 seconds, so the answer comes from [Get the results](/documentation/results-endpoint) using that ID.
+
+## What to send
 Use multipart/form-data. Let your HTTP library set the Content-Type and boundary.
+
 | Field | Required | What to send |
 |---|---|---|
-| file | Yes | One PDF file, with type application/pdf. |
-| output_template | Yes | JSON Schema as text, 2-12,000 characters. |
+| files | Yes | Your PDF file. Repeat this field once per PDF. Do not write files[]. |
+| output_template | Yes | Your JSON Schema as text, 2-12,000 characters. |
 | ocr_mode | No | auto, always or never. Default: auto. |
 
-Send file bytes, not a file URL or base64 JSON. There is no custom instruction field. Describe the required fields in your schema.
+Send the file bytes, not a link or base64 text.
 
-## Response
-HTTP 202 returns a job. result is null because work has not finished. batch_id is null for this single-file API. The complete example below uses a schema with only totalAmount.
+## What you get back
 ```json
-__JOB__
+{"extraction_id":"a1b2c3d4","accepted_count":1,"rejected_count":1,
+ "jobs":[{"id":"doc-1","extraction_id":"a1b2c3d4","status":"queued","result":null}],
+ "rejected":[{"file_name":"broken.pdf","error":"The uploaded file is not a valid PDF."}]}
 ```
-## What to do next
-Save id in your app and [check the job](/documentation/get-job). The result will be in result.data when status is completed.
+
+Save `extraction_id`. That is the only thing you need to get your results.
+
+## A bad file does not spoil the rest
+If you send five PDFs and one is damaged, the other four are still processed. The damaged one appears in `rejected` with the reason. Rejected files are not counted against your monthly limit.
+
+Always read `accepted_count`. If it is 0, nothing was accepted and there is nothing to check.
 
 ## Common errors
-400: the PDF is empty, invalid, protected, too large or has too many pages. 422: a required field or schema is missing or invalid. 401: the key is invalid. 402: the monthly document limit is reached. 429: too many requests or the work queue is full. 503: AI keys are not configured.
+| Code | What happened |
+|---|---|
+| 401 | Your key is missing, wrong or switched off. |
+| 402 | Your monthly document limit is used up. Nothing was processed. |
+| 413 | The files together are too large. |
+| 422 | Too many files, or your JSON Schema is not valid. |
+| 429 | Too many requests. Wait as long as the Retry-After header says. |
 
-## If you lose the response
-Do not send the same PDF again immediately. It may already be accepted. The API does not detect duplicate uploads, so another request can use more quota. Check recent jobs or contact the owner first.
+## If you do not get a response
+Do not send the same PDFs again straight away. They may already have been accepted, and sending them again uses your limit twice. Check first with the extraction ID if you have it.
 '''),
-'batch-upload': ('Submit a batch', 'Send several PDFs with one schema. Get one result for each accepted file.', '''
-## Request body
-Use multipart/form-data. Repeat the field named files once for each PDF. Do not use file or files[].
-| Field | Required | What to send |
+'results-endpoint': ('Get the results', 'Check your extraction until it is finished, then read the extracted fields.', '''
+## What this does
+You give it the extraction ID and it tells you how each document is doing. When a document is finished, its extracted fields are in `result.data`.
+
+Ask again every 2 to 3 seconds until every document says `completed` or `failed`.
+
+## What you get back
+```json
+[{"id":"doc-1","extraction_id":"a1b2c3d4","file_name":"invoice.pdf",
+  "status":"completed","progress":100,
+  "result":{"data":{"totalAmount":4500},"evidence":[],"warnings":[]}}]
+```
+
+You get a list with one entry per PDF you sent, in the order you sent them.
+
+## The four statuses
+| Status | What it means | What to do |
 |---|---|---|
-| files | Yes | One or more PDF file parts. |
-| output_template | Yes | One JSON Schema text field, 2-12,000 characters. |
-| ocr_mode | No | auto, always or never. Default: auto. |
+| queued | Waiting its turn. | Ask again in a few seconds. |
+| processing | Being read now. progress shows how far it is. | Ask again in a few seconds. |
+| completed | Finished. | Read result.data. |
+| failed | Did not finish. | Read error and failure_code. |
 
-The same schema is used for every file. A batch does not combine the PDFs into one result.
+## Reading the result
+`result.data` matches your schema exactly. Same field names, same shape. Any field the PDF did not contain comes back as `null`, and anything you did not ask for is removed.
 
-## Response
-HTTP 202 returns accepted jobs and rejected files. This example leaves out some job fields to keep it short.
-```json
-{"batch_id":"example-batch-id","accepted_count":1,"rejected_count":1,
- "jobs":[{"id":"example-job-id","status":"queued","result":null}],
- "rejected":[{"file_name":"bad.pdf","error":"The uploaded file is not a valid PDF."}]}
-```
-## Check both counts
-Always read accepted_count, rejected_count and rejected. A 202 response can have zero accepted jobs. In that case, do not check the batch later: it has no saved jobs and batch lookup returns 404.
+`result.evidence` shows which page each value was found on, so you can check the answer.
 
-If the work queue becomes full, affected files appear in rejected. Valid files can still be accepted while invalid files are rejected.
+## How long it takes
+About 15 to 30 seconds per PDF. Two PDFs are read at a time; the rest wait their turn. So ten PDFs take longer than one.
 
-## Limits and errors
-Too many files or an invalid schema returns 422. Too much combined data returns 413. The monthly quota check counts all submitted files before validation, but only accepted documents are added to usage.
+If you stop checking, the work still continues. You can come back to the same ID later.
 
-## Next step
-Save batch_id and the accepted job IDs. [Check the batch](/documentation/get-batch) until all accepted jobs finish. A server error may happen after some files have been accepted, so do not automatically send the whole batch again.
+## If a document failed
+The request itself still succeeds with 200. Look at `failure_code` on that document to see whether to try again or fix something. See [When something goes wrong](/documentation/errors).
+
+## You only see your own work
+An extraction created with a different key returns 404, as if it does not exist.
 '''),
-'get-job': ('Retrieve a job', 'Check one job and read its result using the key that created it.', '''
-## Path parameter
-| Parameter | Required | Meaning |
-|---|---|---|
-| job_id | Yes | The id returned when you uploaded the PDF. |
+'delete': ('Delete documents and results', 'Remove your uploaded PDFs and their results when you no longer need them.', '''
+## What this does
+Deletes everything in one extraction: the PDFs you uploaded, the records and the results. This cannot be undone.
 
-Replace {job_id} in the URL with the real ID.
+## What you get back
+| Code | What it means |
+|---|---|
+| 204 | Deleted. The response is empty, which is normal. |
+| 409 | Something is still being read. Wait for it to finish, then try again. |
+| 404 | That ID does not exist, or it belongs to a different key. |
 
-## Response
-HTTP 200 returns one [job object](/documentation/results). result is null before success. This short example leaves out other job fields and result metadata.
-```json
-{"id":"example-job-id","status":"completed","progress":100,
- "result":{"data":{"totalAmount":1250},"evidence":[],"warnings":[]}}
-```
-## Check status
-queued means waiting; processing means running. completed means the data is ready. failed means extraction did not succeed. A failed job still returns HTTP 200, so your app must check status.
+## Why you should use it
+Your uploaded PDFs stay on the server until something deletes them. Nothing removes them automatically.
 
-## How often to check
-Start with one check every three seconds. All requests using the same key share its rate limit. If you get 429, wait for Retry-After before checking again. Set a deadline and keep the job ID if you stop waiting.
-
-## Errors
-404 means the job does not exist or belongs to another key. 401 means the key is invalid. 429 means the request limit was reached.
+If your documents contain private information, call this once your app has saved the fields it needs.
 '''),
-'get-batch': ('Retrieve a batch', 'Check all jobs in a batch with one request.', '''
-## Path parameter
-| Parameter | Required | Meaning |
-|---|---|---|
-| batch_id | Yes | The batch_id returned by batch upload. |
+'account': ('See your usage and limits', 'Check how many documents you have used this month and how many are left.', '''
+## What this does
+Tells you about your own key: how many documents you may process this month, how many you have used, and how many requests per minute you may make.
 
-## Response
-HTTP 200 returns a list of job objects. There is no outer batch object or overall batch status. This example leaves out other job fields.
+## What you get back
 ```json
-[{"id":"job-a","status":"completed","result":{"data":{"totalAmount":1250}}},
- {"id":"job-b","status":"processing","result":null}]
+{"period":"2026-09","documents_this_month":143,
+ "monthly_document_quota":5000,"documents_remaining":4857,
+ "rate_limit_per_minute":120}
 ```
-## When to stop checking
-Keep checking while an expected job is queued or processing. Stop when every expected job is completed or failed. One failed job does not mean the other jobs failed.
 
-Jobs are ordered by creation time, then ID. Use each job's ID to match it to your app's records; do not rely on list position.
+| Field | What it means |
+|---|---|
+| documents_this_month | Documents accepted so far this calendar month. |
+| documents_remaining | How many more you can send before you get 402. |
+| rate_limit_per_minute | How many requests you can make in any 60 seconds. |
 
-## Missing batch
-404 means no jobs in this batch are visible to your key. This can happen for an unknown batch, another key's batch, an all-rejected upload, or a batch whose jobs were deleted. Save the accepted job IDs and handle missing jobs separately.
+## Two different limits
+**Documents per month** resets at the start of each month. Going over gives you 402 and nothing is processed.
+
+**Requests per minute** is about how fast you call, not how many PDFs you send. Going over gives you 429 with a Retry-After header telling you how long to wait.
+
+A rejected or damaged file does not count against your monthly total.
+
+## Good practice
+Check this before sending a large batch so you do not run out halfway. You can also show the remaining count in your own admin screen.
 '''),
-'get-many': ('Retrieve selected jobs', 'Check up to 50 job IDs in one request.', '''
-## Query parameter
-| Parameter | Required | Meaning |
-|---|---|---|
-| ids | Yes | Job IDs separated by commas, such as id1,id2. |
+'create-key': ('Create an API key', 'Service owners use this to give another application its own key.', '''
+## Who this is for
+Only the person running the service. It needs the `X-Admin-Token` header, which is a different secret from a client API key. A client key cannot call this.
 
-Send at least one nonempty ID and at most 50 nonempty IDs.
-
-## Response
-HTTP 200 returns a list of full job objects. Repeated IDs appear once. The response follows the order of the first occurrence of each ID.
-
-Unknown IDs and jobs belonging to other keys are left out. If no jobs are visible, the result is:
+## What to send
 ```json
-[]
+{"name":"Acme Corp","rate_limit_per_minute":60,"monthly_document_quota":200}
 ```
-An empty list is not proof that work finished. Compare the returned IDs with the IDs you requested.
+Only `name` is required. The other two fall back to the service defaults.
 
-## Errors
-422 means ids is missing, empty or has more than 50 IDs. A wrong key returns 401. Too many requests returns 429.
-'''),
-'list-jobs': ('List recent jobs', 'Get the most recent jobs created with your key.', '''
-## Query parameter
-| Parameter | Required | Meaning |
-|---|---|---|
-| limit | No | Number of jobs to return. Default: 20. |
-
-Values below 1 are changed to 1. Values above 100 are changed to 100. The value must be an integer.
-
-## Response
-HTTP 200 returns a list of full job objects, newest first. A key with no jobs receives an empty list.
+## What you get back
 ```json
-[]
+{"key":"ps_live_xxxxxxxxxxxxxxxxxxxx",
+ "api_key":{"id":"key-1","name":"Acme Corp","key_prefix":"ps_live_xxxxxx...",
+            "rate_limit_per_minute":60,"monthly_document_quota":200}}
 ```
-There is no next-page token, offset or total count. Save job IDs in your own database if you need complete history.
 
-## Finding an uncertain upload
-Use this list to help check an upload whose response was lost. A filename is not a unique ID. Check the time and your own records, or ask the service owner, before uploading again.
-'''),
-'delete-job': ('Delete a job', 'Remove a saved PDF and its result after you have saved what your app needs.', '''
-## Path parameter
-| Parameter | Required | Meaning |
-|---|---|---|
-| job_id | Yes | The ID of a job owned by your key. |
+**The key is shown once and never again.** Only a scrambled version is stored, so even someone who copies the database cannot use it. If a key is lost, create a new one.
 
-## Response
-HTTP 204 means deletion succeeded. The response has no body, so do not try to read JSON from it. The local PDF and job/result record are removed. There is no restore API.
+## Give every application its own key
+One key per application. Each key sees only its own documents, has its own limits, and can be switched off without affecting anyone else.
 
-## When to delete
-Delete only completed or failed jobs in your integration. A processing job returns 409. Although the code allows deleting queued jobs, a worker can start at the same time, so this is not a reliable way to cancel work.
-
-## Errors
-404 means the job is missing or belongs to another key. 409 means it was processing when checked. 401 means the key is invalid.
-
-## Data retention
-Deletion does not refund document quota. It does not undo AI processing or remove independent backups. There is no PDF-download, batch-delete or cancel API.
-
-The app does not automatically schedule deletion. The current bulk cleanup script looks only at the latest 100 jobs and can miss older data. Agree on a retention policy with the service owner.
-'''),
-'usage': ('Usage and quotas', 'Check how many documents your key has used this month and how many remain.', '''
-## Request
-Send your client key. No body or query parameters are needed. This endpoint needs a key even when development mode allows anonymous calls.
-
-## Response
-```json
-{"api_key":{"id":"example-key-id","name":"CRM production",
- "key_prefix":"ps_live_ABC123...","rate_limit_per_minute":60,
- "monthly_document_quota":1000,"documents_this_month":12,
- "created_at":"2026-09-01T08:00:00+00:00",
- "last_used_at":"2026-09-08T08:00:00+00:00","revoked_at":null},
- "period":"2026-09","documents_this_month":12,
- "monthly_document_quota":1000,"documents_remaining":988,
- "rate_limit_per_minute":60}
+## Viewing and switching off keys
+These are not available over the internet, on purpose. The owner runs them on the server:
+```bash
+python manage_keys.py list
+python manage_keys.py revoke <key_id>
 ```
-## Document limit
-An accepted document uses one unit when uploaded, even if extraction later fails. Rejected files do not add usage. Deleting a job does not refund usage.
-
-The period is a calendar month in UTC, shown as YYYY-MM. The next month starts a new count. Unused allowance does not carry over. A 402 response means the requested upload would exceed the monthly limit; it is not a payment page.
-
-## Request limit
-Uploads, status checks, usage checks and deletes share one limit for the same key. At one check every three seconds, one polling stream uses about 20 requests per minute. Use batch checks for many jobs.
-
-429 from the rate limiter includes Retry-After in seconds. Public health/docs and admin calls do not use this client rate limit.
-
-## Current limitations
-The quota check and usage update happen separately. Simultaneous uploads can exceed the intended limit. Batch page counters can also include files rejected by a full queue. Do not use these counters as an exact billing system without fixes.
-'''),
-'create-key': ('Create an API key', 'Service owners use this API to give another application its own key.', '''
-## Admin access
-Use X-Admin-Token, not a client API key. Never send the admin token to end users.
-
-## Request body
-Use Content-Type: application/json.
-| Field | Required | Allowed value |
-|---|---|---|
-| name | Yes | 1-120 characters. Spaces alone are not allowed. |
-| rate_limit_per_minute | No | Integer from 1 to 10,000. |
-| monthly_document_quota | No | Integer from 1 to 10,000,000. |
-
-If a limit is missing or null, the server uses its default for new keys.
-```json
-{"name":"CRM production","rate_limit_per_minute":60,"monthly_document_quota":1000}
-```
-## Save the key now
-HTTP 201 returns key and api_key. key is the full secret value and is shown only once. api_key contains the ID, name, display prefix, limits, usage and timestamps.
-```json
-{"key":"<NEW_RAW_KEY>","api_key":{"id":"example-key-id",
- "name":"CRM production","key_prefix":"ps_live_ABC123...",
- "rate_limit_per_minute":60,"monthly_document_quota":1000,
- "documents_this_month":0,"created_at":"2026-09-08T08:00:00+00:00",
- "last_used_at":null,"revoked_at":null}}
-```
-The server stores a hash, not the full key. You cannot retrieve a lost key. A new key cannot access jobs created by an older key.
-
-## Errors
-401: wrong or missing admin token. 503: admin access is not configured. 422: invalid input. There is no API to change an existing key's quota or move its jobs to another key.
-'''),
-'list-keys': ('List API keys', 'Service owners can view issued keys and their current-month usage.', '''
-## Request
-Send X-Admin-Token. No body or query parameters are needed.
-
-## Response
-HTTP 200 returns key records, newest first. Disabled keys are included. An empty list means no keys have been issued.
-```json
-[]
-```
-Each record has id, name, key_prefix, rate_limit_per_minute, monthly_document_quota, documents_this_month, created_at, last_used_at and revoked_at. The full secret key is never returned.
-
-Use the id when you need to disable a key. key_prefix is only a short label for display. There is no pagination.
-
-## Client usage
-An ordinary API user should call [GET /api/usage](/documentation/usage) to see their own usage. A client key cannot list other keys.
-
-## Errors
-401 means wrong or missing admin token. 503 means ADMIN_TOKEN is not configured on the server.
-'''),
-'revoke-key': ('Revoke an API key', 'Disable a client key so it cannot make more API requests.', '''
-## Request
-Send X-Admin-Token. Replace {key_id} with the ID from key creation or key listing. Do not put the full secret key or display prefix in the URL.
-
-## Response
-HTTP 204 has no body and means the key was disabled. Future requests with that key return 401.
-
-This does not cancel jobs already accepted, delete files, or move jobs to another key.
-
-## Errors
-404: unknown key ID. 409: the key is already disabled. 401: wrong or missing admin token. 503: admin access is not configured.
-
-## Replacing a key
-Save needed results before disabling the old key. A new key cannot read the old key's jobs. There is no API to re-enable a key, rotate it while preserving its owner ID, or transfer its jobs.
+Keeping this off the network means that even if the admin token leaked, nobody could switch off every client's access.
 '''),
 'schema': ('Schemas and OCR', 'Choose the output fields and tell the service how to read PDF pages.', '''
 ## What is a JSON Schema
@@ -413,7 +315,7 @@ Both completed and failed can have progress 100. HTTP 200 on a status request on
 ## Job fields
 | Field | Meaning |
 |---|---|
-| id, batch_id | Job ID and optional batch ID. |
+| id, extraction_id | The document's own ID, and the extraction it belongs to. |
 | file_name, file_size | Safe display filename and size in bytes. |
 | instruction | The fixed extraction instruction used by the server. |
 | output_template | The submitted schema as a string; may be null for old jobs. |
@@ -442,7 +344,7 @@ The response does not include the local file path or owning key ID. Page counts 
 Use result.data in your app. Evidence is generated by the model and may not cover every field. Empty warnings do not prove the values are correct.
 
 ## Which lookup to use
-Use [one job](/documentation/get-job), [one batch](/documentation/get-batch), or [up to 50 IDs](/documentation/get-many). Use [recent jobs](/documentation/list-jobs) for a short history. Save job IDs in your own database for complete tracking.
+Use [one job](/documentation/results-endpoint), [one batch](/documentation/results-endpoint), or [up to 50 IDs](/documentation/results-endpoint). Use [recent jobs](/documentation/results-endpoint) for a short history. Save job IDs in your own database for complete tracking.
 '''),
 'errors': ('Errors and retries', 'Check HTTP errors and job failures separately. Retry only when it is safe.', '''
 ## HTTP status codes

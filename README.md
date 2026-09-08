@@ -77,6 +77,10 @@ npm run build
 
 ## Using it as an API service
 
+The developer documentation website is served by the frontend at `/documentation`. It has 22 navigable pages in simple English, a quick start, all 12 API operations, a dated test-results page, searchable topics, copyable examples and downloadable Python/Node.js clients. The `/api/docs` Swagger explorer remains available separately.
+
+Documentation authoring and deployment instructions: [docs/WEBSITE.md](docs/WEBSITE.md).
+
 The service ships in open mode so the local console works without a key. To let other
 people call it, turn on key mode in `backend/.env`:
 

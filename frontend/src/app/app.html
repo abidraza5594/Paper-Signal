@@ -4,6 +4,7 @@
     <strong>Paper<span>Signal</span></strong>
   </div>
   <div class="topbar-right">
+    <a href="/documentation" class="link">API documentation</a>
     @if (apiKey()) { <span class="key-chip" title="API key used for every request"><span class="mono">{{ maskedApiKey() }}</span><button type="button" class="link" (click)="clearApiKey()">Change</button></span> }
     <div class="api-state" [class.offline]="healthError() || health()?.status !== 'ok'">
       <span class="state-dot"></span>@if (healthLoading()) { Checking } @else if (healthError()) { Offline } @else { Connected }

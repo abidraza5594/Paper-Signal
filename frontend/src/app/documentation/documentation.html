@@ -1,0 +1,80 @@
+<a class="skip" href="#docs-content">Skip to content</a>
+<header class="docs-header">
+  <a class="docs-brand" routerLink="/documentation" aria-label="PaperSignal documentation home">
+    <span class="docs-logo" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h4" /></svg></span>
+    <span>Paper<span class="brand-accent">Signal</span></span>
+  </a>
+  <span class="header-divider"></span><span class="header-label">Developers</span>
+  <nav class="header-links" aria-label="External resources">
+    <a href="https://papersignal.duckdns.org/api/docs" target="_blank" rel="noopener">Swagger UI <span aria-hidden="true">↗</span></a>
+    <a class="open-app" href="https://papersignal.duckdns.org">Open application <span aria-hidden="true">↗</span></a>
+  </nav>
+  <button class="menu-button" type="button" (click)="menuOpen.set(!menuOpen())" [attr.aria-expanded]="menuOpen()" aria-controls="docs-sidebar">{{ menuOpen() ? 'Close menu' : 'Menu' }}</button>
+</header>
+@if (menuOpen()) { <button class="menu-scrim" aria-label="Close navigation" (click)="menuOpen.set(false)"></button> }
+<aside id="docs-sidebar" class="docs-sidebar" [class.is-open]="menuOpen()">
+  <label class="search-box" for="docs-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><input id="docs-search" type="search" placeholder="Search documentation" [value]="query()" (input)="query.set($any($event.target).value)" /><kbd>/</kbd></label>
+  <nav aria-label="Documentation sections">
+    @for (group of groups(); track group.name) {
+      <div class="nav-group"><h2>{{ group.name }}</h2>
+      @for (page of group.pages; track page.id) {
+        <a [routerLink]="['/documentation', page.id]" [class.active]="current().id === page.id" [attr.aria-current]="current().id === page.id ? 'page' : null" (click)="navigate()">
+          @if (page.method) { <span class="nav-method" [class]="'nav-method ' + page.method.toLowerCase()">{{ page.method === 'DELETE' ? 'DEL' : page.method }}</span> }
+          <span>{{ page.title }}</span>
+        </a>
+      }</div>
+    } @empty { <p class="search-empty" role="status">No matching topics. Try “upload”, “key” or “quota”.</p> }
+  </nav>
+  <div class="sidebar-bottom"><span class="version-dot"></span> API v0.1.0 <span>REST / JSON</span></div>
+</aside>
+<div class="docs-layout">
+  <main id="docs-content" class="docs-main" tabindex="-1">
+    <div class="breadcrumb">Documentation <span>/</span> {{ current().group }}</div>
+    <h1>{{ current().title }}</h1>
+    <p class="page-summary">{{ current().summary }}</p>
+    @if (current().id !== 'test-results') {
+      <p class="verification-notice"><strong>Latest test: extraction needs attention.</strong> Uploads and job APIs responded, but real extraction failed on 8 September 2026. <a routerLink="/documentation/test-results">Read the test results →</a></p>
+    }
+    @if (current().method) {
+      <div class="endpoint-bar"><span [class]="'method-badge ' + current().method!.toLowerCase()">{{ current().method }}</span><code>{{ current().path }}</code><span class="response-badge">{{ current().success }}</span></div>
+      <p class="auth-line"><span aria-hidden="true">⌁</span> {{ current().auth }}</p>
+    }
+    @if (current().id === 'overview') {
+      <div class="flow" aria-label="Integration in three steps">
+        <a routerLink="/documentation/upload"><span>01</span><strong>Submit a PDF</strong><small>File + JSON Schema</small></a><span class="flow-arrow" aria-hidden="true">→</span>
+        <a routerLink="/documentation/get-job"><span>02</span><strong>Track the job</strong><small>Poll until complete</small></a><span class="flow-arrow" aria-hidden="true">→</span>
+        <a routerLink="/documentation/results"><span>03</span><strong>Use the result</strong><small>Read result.data</small></a>
+      </div>
+      <div class="base-url"><div><span>PRODUCTION BASE URL</span><code>https://papersignal.duckdns.org</code></div><button type="button" (click)="copy('https://papersignal.duckdns.org', 'base')">{{ copied() === 'base' ? 'Copied' : 'Copy URL' }}</button></div>
+    }
+    @if (current().samples?.length) {
+      <section class="sample-section" aria-label="Integration code example">
+        <div class="code-toolbar"><div class="code-tabs" role="group" aria-label="Example language">
+        @for (item of current().samples; track item.language) { <button type="button" [class.selected]="sample()?.language === item.language" [attr.aria-pressed]="sample()?.language === item.language" (click)="language.set(item.language)">{{ item.language }}</button> }
+        </div><button class="copy-button" type="button" (click)="copy(sample()!.code, 'sample')">{{ copied() === 'sample' ? 'Copied!' : 'Copy code' }}</button></div>
+        <pre tabindex="0"><code>{{ sample()?.code }}</code></pre>
+      </section>
+    }
+    <article class="prose">
+    @for (block of current().blocks; track $index; let i = $index) {
+      @switch (block.kind) {
+        @case ('heading') { <h2 [id]="block.id">{{ block.text }}<a [routerLink]="['/documentation', current().id]" [fragment]="block.id" aria-label="Link to this section">#</a></h2> }
+        @case ('paragraph') { <p [innerHTML]="block.html"></p> }
+        @case ('list') { <ul>@for (item of block.items; track $index) { <li [innerHTML]="item"></li> }</ul> }
+        @case ('table') { <div class="table-scroll" tabindex="0" role="region" aria-label="Reference table"><table><thead><tr>@for (cell of block.headers; track $index) { <th scope="col" [innerHTML]="cell"></th> }</tr></thead><tbody>@for (row of block.rows; track $index) { <tr>@for (cell of row; track $index) { <td [innerHTML]="cell"></td> }</tr> }</tbody></table></div> }
+        @case ('code') { <div class="code-block"><div class="code-toolbar"><span>{{ block.language || 'Example' }}</span><button class="copy-button" type="button" (click)="copy(block.text!, 'code-' + i)">{{ copied() === 'code-' + i ? 'Copied!' : 'Copy' }}</button></div><pre tabindex="0"><code>{{ block.text }}</code></pre></div> }
+      }
+    }
+    </article>
+    <div class="page-pagination">
+      @if (previous(); as page) { <a [routerLink]="['/documentation', page.id]"><small>← Previous</small><strong>{{ page.title }}</strong></a> } @else { <span></span> }
+      @if (next(); as page) { <a class="next" [routerLink]="['/documentation', page.id]"><small>Next →</small><strong>{{ page.title }}</strong></a> }
+    </div>
+    <footer class="docs-footer">PaperSignal developer documentation <span>Reviewed 8 September 2026 · API v0.1.0</span></footer>
+  </main>
+  <aside class="contents-rail" aria-label="On this page"><h2>ON THIS PAGE</h2>
+    @for (heading of headings(); track heading.id) { <a [routerLink]="['/documentation', current().id]" [fragment]="heading.id">{{ heading.text }}</a> }
+    <div class="resources"><h2>RESOURCES</h2><a href="https://papersignal.duckdns.org/api/openapi.json" target="_blank" rel="noopener">OpenAPI specification ↗</a><a href="/documentation-assets/invoice.schema.json" download>Invoice schema ↓</a><a href="/documentation-assets/python_client.py" download>Python example ↓</a><a href="/documentation-assets/node_client.mjs" download>Node.js example ↓</a></div>
+  </aside>
+</div>
+<div class="copy-status" aria-live="polite" [class.visible]="copyError()">{{ copyError() }}</div>

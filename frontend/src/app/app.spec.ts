@@ -28,6 +28,12 @@ describe('PDF file validation', () => {
 });
 
 describe('JSON Schema validation', () => {
+  it('accepts constraint-only schemas and boolean schemas', () => {
+    for (const schema of [{ minimum: 3 }, { pattern: '^[A-Z]+$' }, { items: { type: 'number' } }, true, false]) {
+      expect(validateJsonSchema(JSON.stringify(schema))).toBeNull();
+    }
+  });
+
   it('accepts a nested object schema', () => {
     expect(validateJsonSchema(JSON.stringify({
       type: 'object',
@@ -42,7 +48,7 @@ describe('JSON Schema validation', () => {
 
   it('rejects free text and example objects immediately', () => {
     expect(validateJsonSchema('lorem')).toContain('Invalid JSON');
-    expect(validateJsonSchema('{"name":"string"}')).toContain('Root type');
+    expect(validateJsonSchema('{"name":"string"}')).toContain('JSON Schema');
   });
 });
 
@@ -59,9 +65,9 @@ describe('Simple field builder', () => {
     expect(JSON.parse(schema)).toEqual({
       type: 'object',
       properties: {
-        trainName: { type: 'string' },
-        trainNumber: { type: 'number' },
-        isCancelled: { type: 'boolean' },
+        trainName: { type: ['string', 'null'] },
+        trainNumber: { type: ['number', 'null'] },
+        isCancelled: { type: ['boolean', 'null'] },
         stops: { type: 'array', items: { type: 'string' } },
       },
     });
@@ -71,7 +77,7 @@ describe('Simple field builder', () => {
     expect(buildSchemaFromFields([{ name: '  ', type: 'text' }])).toBe('');
     expect(JSON.parse(buildSchemaFromFields([{ name: '', type: 'text' }, { name: 'total', type: 'number' }]))).toEqual({
       type: 'object',
-      properties: { total: { type: 'number' } },
+      properties: { total: { type: ['number', 'null'] } },
     });
   });
 });
@@ -221,8 +227,8 @@ describe('App states', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('max 40 pages');
     expect(fixture.nativeElement.textContent).toContain('Only JSON Schema is accepted');
-    expect(fixture.nativeElement.textContent).toContain('Missing values become');
-    expect(fixture.nativeElement.textContent).toContain('extra fields are removed');
+      expect(fixture.nativeElement.textContent).toContain('Missing values use');
+      expect(fixture.nativeElement.textContent).toContain('Required facts without evidence are reported as unresolved');
     expect(fixture.nativeElement.querySelector('#template')).toBeTruthy();
     expect(fixture.nativeElement.querySelectorAll('.schema-checks span').length).toBe(4);
   });
@@ -493,7 +499,7 @@ describe('App states', () => {
     const request = http.expectOne('/api/v1/extractions');
     expect(JSON.parse((request.request.body as FormData).get('output_template') as string)).toEqual({
       type: 'object',
-      properties: { trainName: { type: 'string' }, trainNumber: { type: 'number' } },
+      properties: { trainName: { type: ['string', 'null'] }, trainNumber: { type: ['number', 'null'] } },
     });
     request.flush({ extraction_id: 'b1', jobs: [{ id: 'j1', extraction_id: 'b1', status: 'queued', progress: 0, file_name: 'train.pdf' }], rejected: [], accepted_count: 1, rejected_count: 0 });
 

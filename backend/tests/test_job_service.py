@@ -6,6 +6,7 @@ from app.config import Settings
 from app.database import JobDatabase
 from app.job_service import JobQueueFullError, JobRunner
 from app.models import EvidenceItem, JobRecord, JobStatus, PartialExtraction
+from app.extraction.types import ExtractionOutcome
 
 
 def make_pdf(path):
@@ -30,17 +31,12 @@ class FakeMistralService:
     def ocr_pages(self, _path, _pages):
         return {}
 
-    def extract(self, chunks, instruction, output_template, output_contract=None, progress=None):
-        assert chunks
-        assert instruction == "Extract invoice number and total"
-        assert output_template is None
-        assert output_contract is None
+    def extract_document(self, document, output_contract, progress=None, **kwargs):
+        assert document.pages
+        assert output_contract is not None
         if progress:
             progress(80, "Extracting")
-        return PartialExtraction(
-            data={"invoice_number": "INV-100", "total": "INR 42"},
-            evidence=[EvidenceItem(label="Total", page=1, evidence="final total of INR 42")],
-        )
+        return ExtractionOutcome({"invoice_number": "INV-100", "total": "INR 42"}, [], [], [], True)
 
 
 def test_job_runner_completes_with_structured_result(tmp_path, monkeypatch):
@@ -62,6 +58,7 @@ def test_job_runner_completes_with_structured_result(tmp_path, monkeypatch):
         file_path=str(pdf_path),
         file_size=pdf_path.stat().st_size,
         instruction="Extract invoice number and total",
+        output_template='{"type":"object"}',
     )
     database.create(job)
     runner = JobRunner(settings, database)
@@ -97,6 +94,7 @@ def run_blank_job(tmp_path, monkeypatch, fake_service):
         file_path=str(pdf_path),
         file_size=pdf_path.stat().st_size,
         instruction="Extract visible text",
+        output_template='{"type":"object"}',
         text_model=settings.mistral_text_model,
         vision_model=settings.mistral_text_model,
         ocr_model=settings.mistral_ocr_model,
@@ -122,9 +120,9 @@ def test_auto_mode_uses_vision_before_ocr(tmp_path, monkeypatch):
         def ocr_pages(self, _path, _pages):
             raise AssertionError("OCR must not run after successful vision transcription")
 
-        def extract(self, chunks, **_kwargs):
-            assert "Vision recovered" in chunks[0]
-            return PartialExtraction(data={"source": "vision"})
+        def extract_document(self, document, _contract, **_kwargs):
+            assert "Vision recovered" in document.pages[0].text
+            return ExtractionOutcome({"source": "vision"}, [], [], [], True)
 
     completed = run_blank_job(tmp_path, monkeypatch, VisionSuccess)
 
@@ -148,9 +146,9 @@ def test_auto_mode_falls_back_to_ocr_when_vision_is_unusable(tmp_path, monkeypat
             assert pages == [1]
             return {1: "OCR recovered the page after the vision result was unusable."}
 
-        def extract(self, chunks, **_kwargs):
-            assert "OCR recovered" in chunks[0]
-            return PartialExtraction(data={"source": "ocr"})
+        def extract_document(self, document, _contract, **_kwargs):
+            assert "OCR recovered" in document.pages[0].text
+            return ExtractionOutcome({"source": "ocr"}, [], [], [], True)
 
     completed = run_blank_job(tmp_path, monkeypatch, VisionThenOcr)
 
@@ -176,3 +174,22 @@ def test_job_runner_rejects_work_when_bounded_queue_is_full(tmp_path, monkeypatc
     with pytest.raises(JobQueueFullError, match="queue is full"):
         runner.submit("second")
     runner.shutdown()
+
+
+def test_unsatisfied_contract_is_failed_with_partial_data_and_audit(tmp_path, monkeypatch):
+    class Unsatisfied:
+        def __init__(self, _settings):
+            pass
+
+        def vision_page_text(self, _image, _page):
+            return "Readable source evidence long enough for transcription."
+
+        def extract_document(self, document, _contract, **_kwargs):
+            return ExtractionOutcome({"known": "Readable"}, [{"fieldPath": "/known"}],
+                                     [{"rejectionReason": "unresolved_conflict"}], [], False, ["/required"])
+    result = run_blank_job(tmp_path, monkeypatch, Unsatisfied)
+    assert result.status == JobStatus.failed
+    assert result.failure_code == "SCHEMA_UNSATISFIED"
+    assert result.result["data"] == {"known": "Readable"}
+    assert result.result["document"]["schema_valid"] is False
+    assert result.extraction_audit["decisions"][0]["rejectionReason"] == "unresolved_conflict"

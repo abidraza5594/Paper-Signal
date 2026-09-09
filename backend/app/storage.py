@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Iterator, Protocol
 
 from fastapi import UploadFile
+import fitz
 
 
 class UploadValidationError(ValueError):
@@ -27,12 +28,13 @@ class UploadValidationError(ValueError):
 
 CHUNK_SIZE = 1024 * 1024
 PDF_SIGNATURE = b"%PDF-"
+IMAGE_SIGNATURES = {b"\x89PNG": "png", b"\xff\xd8\xff": "jpeg", b"II*\x00": "tiff", b"MM\x00*": "tiff", b"RIFF": "webp"}
 
 
 def safe_name(name: str) -> str:
     base = os.path.basename(name).strip() or "document.pdf"
     base = re.sub(r"[^A-Za-z0-9._() -]", "_", base)[:180]
-    if not base.lower().endswith(".pdf"):
+    if not base.lower().endswith((".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp")):
         base += ".pdf"
     return base
 
@@ -40,10 +42,29 @@ def safe_name(name: str) -> str:
 def _check(total: int, signature: bytes, max_bytes: int) -> None:
     if total == 0:
         raise UploadValidationError("The uploaded file is empty.")
-    if signature != PDF_SIGNATURE:
+    if signature != PDF_SIGNATURE and not any(signature.startswith(prefix) for prefix in IMAGE_SIGNATURES):
         raise UploadValidationError("The uploaded file is not a valid PDF.")
     if total > max_bytes:
         raise UploadValidationError(f"PDF exceeds the {max_bytes // (1024 * 1024)} MB limit.")
+
+
+def _prepare_pdf(path: Path, signature: bytes, max_bytes: int) -> None:
+    """Canonicalize supported image uploads at the storage boundary; preserve all frames."""
+    if signature == PDF_SIGNATURE:
+        return
+    kind = next((kind for prefix, kind in IMAGE_SIGNATURES.items() if signature.startswith(prefix)), None)
+    try:
+        with fitz.open(path, filetype=kind) as image:
+            if any(page.rect.width * page.rect.height > 100_000_000 for page in image):
+                raise UploadValidationError("Image dimensions exceed the supported limit.")
+            pdf_bytes = image.convert_to_pdf()
+        if len(pdf_bytes) > max_bytes:
+            raise UploadValidationError("Converted image exceeds the document size limit.")
+        path.write_bytes(pdf_bytes)
+    except UploadValidationError:
+        raise
+    except Exception as exc:
+        raise UploadValidationError("The image cannot be decoded as a supported document.") from exc
 
 
 class Storage(Protocol):
@@ -80,6 +101,7 @@ class LocalStorage:
                         signature.extend(chunk[: 5 - len(signature)])
                     output.write(chunk)
             _check(total, bytes(signature), self.max_upload_bytes)
+            _prepare_pdf(destination, bytes(signature), self.max_upload_bytes)
             return str(destination), total, original_name
         except Exception:
             destination.unlink(missing_ok=True)
@@ -140,6 +162,7 @@ class S3Storage:
                 handle.close()
                 await upload.close()
             _check(total, bytes(signature), self.max_upload_bytes)
+            _prepare_pdf(temp_path, bytes(signature), self.max_upload_bytes)
         except Exception:
             temp_path.unlink(missing_ok=True)
             raise

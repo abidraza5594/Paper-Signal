@@ -90,7 +90,7 @@ export const DEFAULT_MAX_BATCH_FILES = 10;
 export const DEFAULT_MAX_BATCH_BYTES = 500 * 1024 * 1024;
 
 export function validatePdfFile(file: File, maxFileBytes = MAX_FILE_BYTES): string | null {
-  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+  const isPdf = file.type === 'application/pdf' || /\.(pdf|png|jpe?g|tiff?|webp)$/i.test(file.name);
   if (!isPdf) return 'Please choose a PDF file.';
   if (file.size > maxFileBytes) return `This PDF is larger than ${Math.round(maxFileBytes / 1024 / 1024)} MB. Please choose a smaller file.`;
   if (file.size === 0) return 'This PDF is empty. Please choose another file.';
@@ -108,40 +108,37 @@ const SUPPORTED_SCHEMA_TYPES = new Set([
 ]);
 
 function validateSchemaNode(value: unknown, path: string, depth: number): string | null {
-  if (depth > 8) return 'JSON Schema nesting cannot exceed 8 levels.';
+  if (depth > 64) return 'JSON Schema is too deeply nested.';
+  if (typeof value === 'boolean') return null;
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return `${path} must be a JSON Schema object.`;
   }
 
   const node = value as Record<string, unknown>;
-  const unsupportedComposition = ['$ref', 'allOf', 'anyOf', 'oneOf', 'not'].find(
-    (key) => key in node,
-  );
-  if (unsupportedComposition) return `${unsupportedComposition} is not supported.`;
+  // The backend validates the complete JSON Schema dialect and constraints.
+  // The UI only catches malformed shapes; it must not impose a narrower schema language.
 
   const types = typeof node['type'] === 'string'
     ? [node['type']]
     : Array.isArray(node['type']) && node['type'].every((item) => typeof item === 'string')
       ? node['type'] as string[]
       : [];
-  if (!types.length || types.some((type) => !SUPPORTED_SCHEMA_TYPES.has(type))) {
+  if ('type' in node && (!types.length || types.some((type) => !SUPPORTED_SCHEMA_TYPES.has(type)))) {
     return `${path} must define a supported JSON type.`;
   }
 
   const primaryType = types.find((type) => type !== 'null') ?? 'null';
-  if (primaryType === 'object') {
+  if ('properties' in node) {
     const properties = node['properties'];
     if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
-      return `${path} must contain a non-empty properties object.`;
+      return `${path}.properties must be an object.`;
     }
     const entries = Object.entries(properties);
-    if (!entries.length) return `${path} must contain at least one property.`;
-    if (entries.length > 100) return `${path} cannot contain more than 100 properties.`;
     for (const [name, child] of entries) {
       const error = validateSchemaNode(child, `${path}.properties.${name}`, depth + 1);
       if (error) return error;
     }
-  } else if (primaryType === 'array' && node['items'] !== undefined) {
+  } else if (primaryType === 'array' && node['items'] !== undefined && !Array.isArray(node['items'])) {
     return validateSchemaNode(node['items'], `${path}.items`, depth + 1);
   }
   return null;
@@ -168,12 +165,12 @@ export function buildSchemaFromFields(fields: SchemaField[]): string {
     if (!name) continue;
     properties[name] =
       field.type === 'number'
-        ? { type: 'number' }
+        ? { type: ['number', 'null'] }
         : field.type === 'boolean'
-          ? { type: 'boolean' }
+          ? { type: ['boolean', 'null'] }
           : field.type === 'list'
             ? { type: 'array', items: { type: 'string' } }
-            : { type: 'string' };
+            : { type: ['string', 'null'] };
   }
   if (!Object.keys(properties).length) return '';
   return JSON.stringify({ type: 'object', properties }, null, 2);
@@ -187,11 +184,25 @@ export function validateJsonSchema(raw: string): string | null {
   } catch {
     return 'Invalid JSON. Enter a valid JSON Schema.';
   }
+  if (typeof value === 'boolean') return null;
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return 'JSON Schema must be an object.';
   }
   const root = value as Record<string, unknown>;
-  if (root['type'] !== 'object') return 'Root type must be "object".';
+  if (Object.keys(root).length && ![
+    'type', 'properties', '$ref', '$schema', '$id', 'id', '$defs', 'definitions',
+    '$anchor', '$dynamicAnchor', '$dynamicRef', '$recursiveRef', '$comment',
+    'allOf', 'anyOf', 'oneOf', 'enum', 'const', 'not', 'if', 'then', 'else',
+    'required', 'additionalProperties', 'patternProperties', 'propertyNames',
+    'dependentRequired', 'dependentSchemas', 'dependencies', 'unevaluatedProperties',
+    'items', 'prefixItems', 'additionalItems', 'contains', 'minContains', 'maxContains',
+    'unevaluatedItems', 'minItems', 'maxItems', 'uniqueItems', 'minProperties', 'maxProperties',
+    'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
+    'minLength', 'maxLength', 'pattern', 'format', 'title', 'description', 'default',
+    'examples', 'readOnly', 'writeOnly', 'deprecated',
+  ].some(key => key in root)) {
+    return 'Enter a JSON Schema, not an example object.';
+  }
   return validateSchemaNode(root, 'Root schema', 0);
 }
 
@@ -244,9 +255,9 @@ export class App implements OnInit, OnDestroy {
     let parsed: Record<string, unknown> | null = null;
     try { parsed = JSON.parse(this.outputTemplate) as Record<string, unknown>; } catch { /* validation reports this */ }
     return {
-      validJson: !!this.outputTemplate.trim() && !!parsed,
-      rootObject: !!parsed && !Array.isArray(parsed) && parsed['type'] === 'object',
-      properties: !!parsed && !!parsed['properties'] && typeof parsed['properties'] === 'object' && !Array.isArray(parsed['properties']) && Object.keys(parsed['properties'] as object).length > 0,
+      validJson: !!this.outputTemplate.trim() && parsed !== null,
+      rootObject: parsed !== null && (typeof parsed === 'boolean' || (typeof parsed === 'object' && !Array.isArray(parsed))),
+      properties: parsed !== null && error === null,
       supported: !!this.outputTemplate.trim() && error === null,
     };
   }

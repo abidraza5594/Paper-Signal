@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     local_worker_count: int = Field(default=10, ge=1, le=32)
     ai_max_retries: int = Field(default=3, ge=0, le=8)
     ai_retry_base_seconds: float = Field(default=1.0, ge=0.0, le=30.0)
+    ai_request_timeout_seconds: int = Field(default=120, ge=10, le=600)
 
     # Cloud storage and data. Empty means "use local disk / SQLite".
     uploads_bucket: str = ""
@@ -43,6 +44,7 @@ class Settings(BaseSettings):
     mistral_api_key: SecretStr | None = None
     mistral_api_keys: SecretStr | None = None
     mistral_text_model: str = "mistral-small-2603"
+    mistral_verification_model: str = "mistral-large-2512"
     mistral_ocr_model: str = "mistral-ocr-4-0"
 
     ocr_min_text_chars: int = Field(default=80, ge=0, le=2000)
@@ -51,6 +53,9 @@ class Settings(BaseSettings):
     text_chunk_chars: int = Field(default=50_000, ge=5_000, le=200_000)
     ocr_page_batch_size: int = Field(default=40, ge=1, le=100)
     merge_batch_size: int = Field(default=8, ge=2, le=20)
+    extraction_window_chars: int = Field(default=16000, ge=2000, le=50000)
+    extraction_max_candidates: int = Field(default=5000, ge=1, le=50000)
+    extraction_debug: bool = False
 
     @field_validator("cors_origins", mode="before")
     @classmethod

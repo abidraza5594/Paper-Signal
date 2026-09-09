@@ -1,118 +1,56 @@
 import json
-
 import pytest
 
-from app.schema_service import (
-    OutputSchemaError,
-    exact_shape,
-    extraction_response_schema,
-    parse_json_schema_contract,
-    parse_output_contract,
-)
+from app.schema_service import OutputSchemaError, UnsatisfiedContractError, exact_shape, parse_json_schema_contract, parse_output_contract
 
 
-SCHEMA = {
-    "type": "object",
-    "properties": {
-        "Date of Birth": {"type": "string"},
-        "Father's name": {"type": "string"},
-        "Occupation": {"type": "string"},
-        "Birthplace": {"type": "string"},
-        "education": {
-            "type": "object",
-            "properties": {
-                "degree": {"type": "string"},
-                "year of graduation": {"type": "string"},
-            },
-        },
-    },
-}
+def test_contract_is_not_rewritten():
+    schema = {"type": "object", "properties": {
+        "optional": {"type": "string", "pattern": "^[A-Z]+$"},
+        "nested": {"type": ["object", "null"], "additionalProperties": {"type": "number"}}},
+        "required": ["nested"], "additionalProperties": False}
+    result = parse_json_schema_contract(json.dumps(schema))
+    assert result.schema == schema
+    assert exact_shape({"nested": None}, result.schema) == {"nested": None}
+    with pytest.raises(UnsatisfiedContractError):
+        exact_shape({"optional": None, "nested": None}, result.schema)
 
 
-def test_json_schema_is_nullable_required_and_exact():
-    contract = parse_output_contract(json.dumps(SCHEMA))
-    assert contract is not None
-    assert contract.mode == "json_schema"
-
-    shaped = exact_shape(
-        {
-            "Occupation": "Developer",
-            "education": {"degree": "BCA", "extra": "ignored"},
-            "unexpected": "ignored",
-        },
-        contract.schema,
-    )
-
-    assert shaped == {
-        "Date of Birth": None,
-        "Father's name": None,
-        "Occupation": "Developer",
-        "Birthplace": None,
-        "education": {"degree": "BCA", "year of graduation": None},
-    }
-    assert contract.schema["additionalProperties"] is False
-    assert set(contract.schema["required"]) == set(SCHEMA["properties"])
+def test_missing_required_field_cannot_be_repaired_with_a_guess():
+    schema = {"type": "object", "required": ["answer"], "properties": {"answer": {"type": "number"}}}
+    with pytest.raises(UnsatisfiedContractError):
+        exact_shape({}, schema)
 
 
-def test_example_json_creates_the_same_fixed_shape():
-    contract = parse_output_contract('{"name":"","skills":[],"education":{"degree":""}}')
-    assert contract is not None
-    assert contract.mode == "example"
-    assert exact_shape({}, contract.schema) == {
-        "name": None,
-        "skills": None,
-        "education": {"degree": None},
-    }
+@pytest.mark.parametrize("raw", ['{"name":"string"}', '{bad-json}', '[]'])
+def test_api_rejects_non_schema_inputs(raw):
+    with pytest.raises(OutputSchemaError):
+        parse_json_schema_contract(raw)
 
 
-def test_mistral_response_schema_wraps_user_data_contract():
-    contract = parse_output_contract(json.dumps(SCHEMA))
-    wrapper = extraction_response_schema(contract.schema)
-    assert wrapper["properties"]["data"] == contract.schema
-    assert wrapper["additionalProperties"] is False
+def test_local_references_and_composition_are_supported():
+    schema = {"$defs": {"code": {"type": "string", "pattern": "^[A-Z]+$"}},
+              "type": "object", "properties": {"code": {"$ref": "#/$defs/code"}},
+              "additionalProperties": False}
+    result = parse_json_schema_contract(json.dumps(schema))
+    assert exact_shape({"code": "OK"}, result.schema) == {"code": "OK"}
+    with pytest.raises(UnsatisfiedContractError):
+        exact_shape({"code": "bad"}, result.schema)
 
 
-def test_required_schema_parser_rejects_example_objects():
-    with pytest.raises(OutputSchemaError, match="JSON Schema"):
-        parse_json_schema_contract('{"name":"string"}')
+@pytest.mark.parametrize("ref", ["https://example.com/schema", "file:///private.json"])
+def test_external_references_cannot_fetch_data(ref):
+    with pytest.raises(OutputSchemaError, match="bundled"):
+        parse_json_schema_contract(json.dumps({"$ref": ref}))
 
 
-def test_objects_are_never_nullable_so_the_model_cannot_skip_a_whole_branch():
-    """A nullable object lets the model answer `null` for an entire branch.
-
-    A 41-page brochure came back with every field null while the text was
-    plainly in the document: the model had answered `"data": null`, which the
-    contract allowed, and `exact_shape` expanded that into a full null tree.
-    Objects stay non-nullable so the only legal answer is a real object.
-    """
-    nullable_objects = {
-        "type": "object",
-        "properties": {
-            "basics": {
-                "type": ["object", "null"],
-                "properties": {
-                    "projectName": {"type": ["string", "null"]},
-                    "address": {
-                        "type": ["object", "null"],
-                        "properties": {"city": {"type": ["string", "null"]}},
-                    },
-                },
-            }
-        },
-    }
-    contract = parse_json_schema_contract(json.dumps(nullable_objects))
-
-    assert "null" not in contract.schema["type"]
-    assert "null" not in contract.schema["properties"]["basics"]["type"]
-    assert "null" not in contract.schema["properties"]["basics"]["properties"]["address"]["type"]
-
-    # Leaves stay nullable: a field that is genuinely absent must still be null.
-    leaf = contract.schema["properties"]["basics"]["properties"]["projectName"]
-    assert "null" in leaf["type"]
+def test_legacy_examples_are_separate_from_api_contracts():
+    assert parse_output_contract('{"name":""}').mode == "example"
+    with pytest.raises(OutputSchemaError):
+        parse_json_schema_contract('{"name":""}')
 
 
-def test_example_json_also_produces_non_nullable_objects():
-    contract = parse_output_contract('{"education":{"degree":""}}')
-    assert contract is not None
-    assert "null" not in contract.schema["type"]
-    assert "null" not in contract.schema["properties"]["education"]["type"]
+@pytest.mark.parametrize("schema", [{"minimum": 3}, {"pattern": "^[A-Z]+$"},
+    {"items": {"type": "number"}}, {"required": ["code"]}, {"description": "Printed identifier"}])
+def test_valid_constraint_only_schemas_are_preserved(schema):
+    assert parse_json_schema_contract(json.dumps(schema)).schema == schema

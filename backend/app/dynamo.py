@@ -15,6 +15,9 @@ Anything that needs a full table read (listing keys for the CLI) is rare and sma
 from __future__ import annotations
 
 import threading
+import base64
+import gzip
+import json
 from decimal import Decimal
 from typing import Any
 
@@ -72,6 +75,10 @@ class DynamoJobDatabase:
 
     def create(self, job: JobRecord) -> JobRecord:
         item = _to_item({k: v for k, v in job.model_dump(mode="json").items() if v is not None})
+        if job.extraction_audit is not None:
+            item.pop("extraction_audit", None)
+            payload = json.dumps(job.extraction_audit, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            item["extraction_audit_gzip"] = base64.b64encode(gzip.compress(payload)).decode("ascii")
         item["extraction_id"] = job.batch_id or job.id
         item["job_id"] = job.id
         self.table.put_item(Item=item)
@@ -79,6 +86,9 @@ class DynamoJobDatabase:
 
     def _record(self, item: dict) -> JobRecord:
         data = {k: _clean(v) for k, v in item.items() if k not in ("extraction_id", "job_id")}
+        packed = data.pop("extraction_audit_gzip", None)
+        if packed is not None:
+            data["extraction_audit"] = json.loads(gzip.decompress(base64.b64decode(packed)))
         return JobRecord.model_validate(data)
 
     def get(self, job_id: str, api_key_id: str | None = None) -> JobRecord | None:

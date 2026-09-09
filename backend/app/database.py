@@ -56,6 +56,7 @@ class JobDatabase:
                 row[1] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
             }
             migrations = {
+                "extraction_audit_json": "TEXT",
                 "batch_id": "TEXT",
                 "api_key_id": "TEXT",
                 "python_text_pages": "INTEGER NOT NULL DEFAULT 0",
@@ -83,13 +84,14 @@ class JobDatabase:
     def create(self, job: JobRecord) -> JobRecord:
         data = job.model_dump(mode="json")
         data["result_json"] = json.dumps(data.pop("result")) if job.result is not None else None
+        data["extraction_audit_json"] = json.dumps(data.pop("extraction_audit"), ensure_ascii=False) if job.extraction_audit is not None else None
         columns = [
             "id", "batch_id", "api_key_id", "file_name", "file_path", "file_size", "instruction", "output_template",
             "ocr_mode", "status", "progress", "stage", "error", "result_json",
             "page_count", "ocr_pages", "created_at", "updated_at"
             , "python_text_pages", "text_model", "ocr_model", "schema_mode",
             "duration_ms", "failure_code", "failure_stage", "vision_attempted_pages",
-            "vision_pages", "vision_failed_pages", "vision_model"
+            "vision_pages", "vision_failed_pages", "vision_model", "extraction_audit_json"
         ]
         with self._lock, self._connect() as connection:
             connection.execute(
@@ -153,6 +155,8 @@ class JobDatabase:
         changes["updated_at"] = utc_now_iso()
         if "result" in changes:
             changes["result_json"] = json.dumps(changes.pop("result"), ensure_ascii=False)
+        if "extraction_audit" in changes:
+            changes["extraction_audit_json"] = json.dumps(changes.pop("extraction_audit"), ensure_ascii=False)
         normalized = {
             key: value.value if hasattr(value, "value") else value for key, value in changes.items()
         }
@@ -181,4 +185,6 @@ class JobDatabase:
         data = dict(row)
         raw_result = data.pop("result_json")
         data["result"] = json.loads(raw_result) if raw_result else None
+        raw_audit = data.pop("extraction_audit_json", None)
+        data["extraction_audit"] = json.loads(raw_audit) if raw_audit else None
         return JobRecord.model_validate(data)

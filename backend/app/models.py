@@ -31,7 +31,7 @@ class EvidenceItem(BaseModel):
 
 
 class PartialExtraction(BaseModel):
-    data: dict[str, Any] = Field(default_factory=dict)
+    data: Any = Field(default_factory=dict)
     evidence: list[EvidenceItem] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
@@ -43,8 +43,6 @@ class PartialExtraction(BaseModel):
             return value
 
         normalized = dict(value)
-        if normalized.get("data") is None:
-            normalized["data"] = {}
         if normalized.get("evidence") is None:
             normalized["evidence"] = []
         elif isinstance(normalized.get("evidence"), list):
@@ -86,6 +84,7 @@ class JobRecord(BaseModel):
     stage: str = "Queued"
     error: str | None = None
     result: dict[str, Any] | None = None
+    extraction_audit: dict[str, Any] | None = None
     page_count: int | None = None
     ocr_pages: int = 0
     python_text_pages: int = 0
@@ -137,7 +136,7 @@ class JobPublic(BaseModel):
 
     @classmethod
     def from_record(cls, record: JobRecord) -> "JobPublic":
-        return cls(**record.model_dump(exclude={"file_path"}))
+        return cls(**record.model_dump(exclude={"file_path", "extraction_audit"}))
 
     def model_dump(self, **kwargs):  # type: ignore[override]
         kwargs.setdefault("by_alias", True)

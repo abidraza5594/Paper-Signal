@@ -17,8 +17,10 @@ Upload a batch of PDFs, provide one required JSON Schema, and receive contract-s
 - PyMuPDF text extraction for digital PDFs
 - Conditional page fallback: PyMuPDF text → Mistral Small vision → Mistral OCR
 - OCR policies: `auto` uses the full fallback chain, `always` forces OCR, `never` uses Python text only
-- Chunked map/reduce extraction for long documents
-- Required JSON Schema contracts with exact keys, nested shape, nullable missing values, and no extra fields
+- Evidence-first extraction with preserved table geometry, local candidates, independent verification, and deterministic final assembly
+- JSON Schema contracts preserved as supplied, including nullability, required fields, local references, composition, formats, and additional properties
+- Per-field internal provenance and optional debug decisions; unsupported facts are withheld
+- PDF and PNG/JPEG/TIFF/WebP inputs (images enter the same pipeline as canonical PDF pages)
 - Batch identity persisted per job, so reopening any file restores the whole batch view
 - API-key service mode: hashed keys, per-client job isolation, per-key rate limits, monthly document quotas, usage reporting, and admin endpoints plus a `manage_keys.py` CLI
 - Concurrent batch processing with backoff-and-retry on Mistral rate limits
@@ -65,6 +67,9 @@ npm start
 Open `http://localhost:4200`.
 
 ## Test
+
+The extraction architecture, supported normalization rules, debugging controls, and known limitations are documented in [docs/EXTRACTION_PIPELINE.md](docs/EXTRACTION_PIPELINE.md).
+Actual model comparisons, supplied-document results, and remaining accuracy gaps are recorded in [docs/EXTRACTION_VALIDATION.md](docs/EXTRACTION_VALIDATION.md).
 
 ```powershell
 cd backend

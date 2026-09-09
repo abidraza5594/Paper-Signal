@@ -4,6 +4,7 @@ python-multipart==0.0.20
 pydantic==2.11.7
 pydantic-settings==2.10.1
 PyMuPDF==1.26.3
+jsonschema[format]==4.26.0
 mistralai==1.9.10
 
 boto3==1.43.89

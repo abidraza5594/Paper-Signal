@@ -12,7 +12,7 @@ from .database import JobDatabase
 from .mistral_service import AiExtractionError, MistralDocumentService
 from .models import ExtractionResult, JobStatus, OcrMode
 from .pdf_service import PdfProcessingError, PdfTextService
-from .schema_service import exact_shape, parse_output_contract
+from .schema_service import OutputSchemaError, parse_output_contract
 
 
 logger = logging.getLogger(__name__)
@@ -158,31 +158,30 @@ class JobRunner:
                 ocr_text = ai.ocr_pages(pdf_path, ocr_targets)
                 extracted = self.pdf.apply_ocr(extracted, ocr_text)
 
-            chunks = self.pdf.to_chunks(extracted)
             failure_stage = "Structured extraction"
             self.database.update(
-                job_id, progress=32, stage=f"Preparing {len(chunks)} extraction section(s)"
+                job_id, progress=32, stage="Mapping schema fields to source evidence"
             )
 
             def on_progress(percent: int, stage: str) -> None:
                 self.database.update(job_id, progress=percent, stage=stage)
 
             output_contract = parse_output_contract(job.output_template)
-            partial = ai.extract(
-                chunks,
-                instruction=job.instruction,
-                output_template=job.output_template,
-                output_contract=output_contract,
+            if output_contract is None:
+                raise OutputSchemaError("A JSON Schema is required for evidence-backed extraction.")
+            outcome = ai.extract_document(
+                extracted, output_contract,
+                image_reader=lambda page: self.pdf.render_page_data_url(pdf_path, page, dpi=self.settings.vision_render_dpi),
+                crop_reader=lambda page, box: self.pdf.render_page_data_url(pdf_path, page, dpi=self.settings.vision_render_dpi, bbox=box),
                 progress=on_progress,
+                debug=self.settings.extraction_debug,
             )
-            if output_contract:
-                partial.data = exact_shape(partial.data, output_contract.schema)
             duration_ms = round((time.perf_counter() - started) * 1000)
             result = ExtractionResult(
                 request=job.instruction,
-                data=partial.data,
-                evidence=partial.evidence,
-                warnings=partial.warnings,
+                data=outcome.data,
+                evidence=[],
+                warnings=outcome.warnings,
                 document={
                     **extracted.metadata,
                     "file_name": job.file_name,
@@ -192,7 +191,11 @@ class JobRunner:
                     "vision_attempted_pages": vision_attempted_pages,
                     "vision_pages": vision_pages,
                     "vision_failed_pages": vision_failed_pages,
-                    "text_sections": len(chunks),
+                    "text_sections": sum(len(p.layout.windows) for p in extracted.pages if p.layout),
+                    "schema_valid": outcome.schema_valid,
+                    "verification_model": self.settings.mistral_verification_model,
+                    "validation_paths": outcome.validation_paths,
+                    **({"extraction_debug": outcome.debug} if self.settings.extraction_debug else {}),
                     "text_model": self.settings.mistral_text_model,
                     "vision_model": (
                         self.settings.mistral_text_model if vision_attempted_pages else None
@@ -204,17 +207,18 @@ class JobRunner:
             )
             self.database.update(
                 job_id,
-                status=JobStatus.completed,
+                status=JobStatus.completed if outcome.schema_valid else JobStatus.failed,
                 progress=100,
-                stage="Completed",
+                stage="Completed" if outcome.schema_valid else "Schema cannot be satisfied from evidence",
                 result=result.model_dump(mode="json"),
-                error=None,
+                extraction_audit={"provenance": outcome.provenance, "decisions": outcome.debug},
+                error=None if outcome.schema_valid else "Source evidence cannot satisfy required schema constraints. Validated partial data is available in result.data.",
                 duration_ms=duration_ms,
-                failure_code=None,
-                failure_stage=None,
+                failure_code=None if outcome.schema_valid else "SCHEMA_UNSATISFIED",
+                failure_stage=None if outcome.schema_valid else "Final schema validation",
             )
         except Exception as exc:
-            logger.exception("PDF job %s failed (%s)", job_id, type(exc).__name__)
+            logger.error("PDF job %s failed (%s)", job_id, type(exc).__name__)
             duration_ms = round((time.perf_counter() - started) * 1000)
             if isinstance(exc, AiExtractionError):
                 # The service classified it (rate limit, auth, provider outage, ...)
@@ -222,6 +226,8 @@ class JobRunner:
                 failure_code = getattr(exc, "failure_code", "AI_EXTRACTION_ERROR")
             elif isinstance(exc, PdfProcessingError):
                 failure_code = "PDF_PROCESSING_ERROR"
+            elif isinstance(exc, OutputSchemaError):
+                failure_code = "INVALID_OUTPUT_SCHEMA"
             else:
                 failure_code = "PROCESSING_ERROR"
             self.database.update(

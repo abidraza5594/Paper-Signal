@@ -34,16 +34,16 @@
 
   @if (setupOpen()) {
     <section class="card setup" aria-labelledby="setup-title">
-      <h1 id="setup-title" class="card-title">Extract data from PDFs</h1>
+      <h1 id="setup-title" class="card-title">Extract data from documents</h1>
       <p class="card-sub">Pick your files, define the JSON Schema, and get one row per PDF.</p>
 
       <div class="setup-grid">
         <div class="setup-col">
-          <h2 class="step"><span class="step-num">1</span> Choose PDFs</h2>
-          <label class="drop" tabindex="0" role="button" aria-label="Add PDF files" [class.dragging]="isDragging()" [class.filled]="selectedFiles().length" (keydown.enter)="$event.preventDefault(); fileInput.click()" (keydown.space)="$event.preventDefault(); fileInput.click()" (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)">
-            <input #fileInput tabindex="-1" type="file" multiple accept="application/pdf,.pdf" (change)="onFileInput($event)" />
+          <h2 class="step"><span class="step-num">1</span> Choose documents</h2>
+          <label class="drop" tabindex="0" role="button" aria-label="Add document files" [class.dragging]="isDragging()" [class.filled]="selectedFiles().length" (keydown.enter)="$event.preventDefault(); fileInput.click()" (keydown.space)="$event.preventDefault(); fileInput.click()" (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)">
+            <input #fileInput tabindex="-1" type="file" multiple accept="application/pdf,.pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp" (change)="onFileInput($event)" />
             <span class="drop-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M7 18.5v7h18v-7M16 22V6m0 0-6 6m6-6 6 6" /></svg></span>
-            <span class="drop-text"><strong>Drop PDFs here or click to browse</strong><small>Up to {{ maxBatchFiles() }} files &middot; max {{ health()?.max_pdf_pages || 50 }} pages each</small></span>
+            <span class="drop-text"><strong>Drop PDFs or images here</strong><small>Up to {{ maxBatchFiles() }} files &middot; max {{ health()?.max_pdf_pages || 50 }} pages each</small></span>
           </label>
 
           @if (selectedFiles().length) {
@@ -80,14 +80,14 @@
             <button type="button" class="ghost" (click)="addField()">+ Add field</button>
             <p class="hint">Each field becomes a column. A value that is not in the PDF comes back empty.</p>
           } @else {
-            <p class="contract-note"><strong>Only JSON Schema is accepted</strong>Define the exact fields and nesting to extract. Missing values become <code>null</code>; extra fields are removed.</p>
+            <p class="contract-note"><strong>Only JSON Schema is accepted</strong>Define the exact fields and nesting to extract. Missing values use <code>null</code>, an empty list, or omission when your schema allows it. Required facts without evidence are reported as unresolved.</p>
             <label for="template" class="sr-only">Required JSON Schema</label>
             <textarea id="template" name="template" [(ngModel)]="outputTemplate" (ngModelChange)="validateSchemaInput()" maxlength="12000" rows="11" class="code-input" placeholder='{ "type": "object", "properties": { "trainName": { "type": "string" }, "trainNumber": { "type": "number" } } }' required></textarea>
             <div class="schema-checks" aria-live="polite">
               <span [class.ready]="schemaChecks().validJson">{{ schemaChecks().validJson ? '&#10003;' : '&#9675;' }} Valid JSON</span>
-              <span [class.ready]="schemaChecks().rootObject">{{ schemaChecks().rootObject ? '&#10003;' : '&#9675;' }} Root object</span>
-              <span [class.ready]="schemaChecks().properties">{{ schemaChecks().properties ? '&#10003;' : '&#9675;' }} Non-empty properties</span>
-              <span [class.ready]="schemaChecks().supported">{{ schemaChecks().supported ? '&#10003;' : '&#9675;' }} Supported nesting</span>
+              <span [class.ready]="schemaChecks().rootObject">{{ schemaChecks().rootObject ? '&#10003;' : '&#9675;' }} Schema structure</span>
+              <span [class.ready]="schemaChecks().properties">{{ schemaChecks().properties ? '&#10003;' : '&#9675;' }} Field definitions</span>
+              <span [class.ready]="schemaChecks().supported">{{ schemaChecks().supported ? '&#10003;' : '&#9675;' }} Ready to validate</span>
             </div>
           }
           @if (schemaError) { <p class="field-error" role="alert">{{ schemaError }}</p> }
@@ -116,7 +116,7 @@
     <section class="card setup-bar">
       <div><strong>{{ tableJobs().length }} PDF{{ tableJobs().length === 1 ? '' : 's' }} submitted</strong><span>{{ columns().length }} field{{ columns().length === 1 ? '' : 's' }} requested</span></div>
       <div class="bar-actions">
-        <button type="button" class="secondary" (click)="setupOpen.set(true)">Add more PDFs</button>
+        <button type="button" class="secondary" (click)="setupOpen.set(true)">Add more documents</button>
         <button type="button" class="secondary" (click)="startNew()">Start over</button>
       </div>
     </section>
@@ -146,7 +146,7 @@
       <div class="empty">
         <span class="empty-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M6 5.5h13l7 7v19H6zM19 6v7h7M11 19h10M11 23h10" /></svg></span>
         <strong>No results yet</strong>
-        <p>Choose your PDFs and fields above, then press Extract. Every file appears here as one row.</p>
+        <p>Choose your documents and fields above, then press Extract. Every file appears here as one row.</p>
       </div>
     } @else {
       <ul class="result-list">

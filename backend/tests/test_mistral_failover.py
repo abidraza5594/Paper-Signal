@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import json
 
 import pytest
 from pydantic import SecretStr
@@ -11,6 +12,25 @@ from app.mistral_service import (
     is_transient_error,
 )
 from app.schema_service import parse_output_contract
+
+
+def test_candidates_and_verdicts_use_separately_configured_models(monkeypatch):
+    used = []
+    class FakeChat:
+        def complete(self, **kwargs):
+            used.append(kwargs["model"])
+            assert kwargs["timeout_ms"] == 120_000
+            key = "verdicts" if kwargs["model"] == "review-model" else "candidates"
+            return SimpleNamespace(choices=[SimpleNamespace(finish_reason="stop",
+                message=SimpleNamespace(content=json.dumps({key: []})))])
+    monkeypatch.setattr("app.mistral_service.Mistral", lambda **kwargs: SimpleNamespace(chat=FakeChat()))
+    settings = Settings(mistral_api_key=SecretStr("test"), mistral_api_keys=None,
+                        mistral_text_model="search-model", mistral_verification_model="review-model", _env_file=None)
+    service = MistralDocumentService(settings)
+    service.extraction_json(json.dumps({"extraction_plan": [{"field_id": "f1"}], "evidence_windows": [{"id": "p1:b1"}]}))
+    service.extraction_json(json.dumps({"questions": []}))
+    service.extraction_json(json.dumps({"complete_document_text": [], "extraction_plan": [{"field_id": "f1"}], "evidence_windows": [{"id": "p1:b1"}]}))
+    assert used == ["search-model", "review-model", "review-model"]
 
 
 def test_settings_preserve_unique_key_order():
@@ -77,7 +97,7 @@ def test_user_schema_is_sent_as_strict_response_contract(monkeypatch):
     settings = Settings(mistral_api_key=SecretStr("test"), _env_file=None)
     service = MistralDocumentService(settings)
     contract = parse_output_contract(
-        '{"type":"object","properties":{"name":{"type":"string"}}}'
+        '{"type":"object","properties":{"name":{"type":["string","null"]}}}'
     )
 
     result = service._chat_json("extract", contract)
@@ -110,7 +130,7 @@ def test_structured_extraction_normalizes_empty_ai_values(monkeypatch):
 
     result = service._chat_json("extract")
 
-    assert result.data == {}
+    assert result.data is None
     assert [item.model_dump() for item in result.evidence] == [
         {"label": "Finding", "page": 3, "evidence": "Total: 42"}
     ]

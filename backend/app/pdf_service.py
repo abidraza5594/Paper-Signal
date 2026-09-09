@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass, replace
 from pathlib import Path
+from .extraction.layout import PageLayout, native_layout, transcribed_layout
 
 import fitz
 
@@ -16,6 +17,9 @@ class PageText:
     number: int
     text: str
     needs_ocr: bool
+    layout: PageLayout | None = None
+    original_text: str | None = None
+    original_layout: PageLayout | None = None
 
 
 @dataclass(frozen=True)
@@ -49,11 +53,15 @@ class PdfTextService:
             pages: list[PageText] = []
             for index, page in enumerate(document):
                 text = page.get_text("text", sort=True).strip()
+                layout = native_layout(page, index + 1)
+                image_area = sum(fitz.Rect(box).get_area() for box in layout.image_boxes)
                 pages.append(
                     PageText(
                         number=index + 1,
                         text=text,
-                        needs_ocr=len(text) < self.min_text_chars,
+                        needs_ocr=(len(text) < self.min_text_chars
+                                   or "\ufffd" in text or bool(layout.issues)),
+                        layout=layout,
                     )
                 )
             metadata = {
@@ -84,7 +92,7 @@ class PdfTextService:
             document.close()
 
     @staticmethod
-    def render_page_data_url(path: Path, page_number: int, dpi: int = 144) -> str:
+    def render_page_data_url(path: Path, page_number: int, dpi: int = 144, bbox=None) -> str:
         try:
             document = fitz.open(path)
         except Exception as exc:
@@ -93,7 +101,10 @@ class PdfTextService:
             if page_number < 1 or page_number > document.page_count:
                 raise PdfProcessingError(f"PDF page {page_number} is out of range.")
             page = document.load_page(page_number - 1)
-            pixmap = page.get_pixmap(dpi=dpi, alpha=False)
+            clip = None
+            if bbox is not None:
+                clip = (fitz.Rect(bbox) + (-30, -60, 30, 30)) & page.rect
+            pixmap = page.get_pixmap(dpi=dpi, alpha=False, clip=clip)
             image_bytes = pixmap.tobytes("jpeg", jpg_quality=85)
             encoded = base64.b64encode(image_bytes).decode("ascii")
             return f"data:image/jpeg;base64,{encoded}"
@@ -107,18 +118,24 @@ class PdfTextService:
             document.close()
 
     @staticmethod
-    def apply_page_text(result: PdfTextResult, replacement_text: dict[int, str]) -> PdfTextResult:
+    def apply_page_text(result: PdfTextResult, replacement_text: dict[int, str], parser: str = "vision") -> PdfTextResult:
         pages = [
             replace(
                 page,
                 text=replacement_text.get(page.number, page.text).strip(),
-                needs_ocr=False,
+                needs_ocr=not bool(replacement_text.get(page.number, "").strip()),
+                original_text=page.original_text or page.text,
+                original_layout=page.original_layout or page.layout,
+                layout=transcribed_layout(replacement_text[page.number], page.number, parser),
             )
+            if replacement_text.get(page.number, "").strip() else page
             for page in result.pages
         ]
         return PdfTextResult(pages=pages, metadata=result.metadata)
 
-    apply_ocr = apply_page_text
+    @staticmethod
+    def apply_ocr(result: PdfTextResult, replacement_text: dict[int, str]) -> PdfTextResult:
+        return PdfTextService.apply_page_text(result, replacement_text, parser="ocr")
 
     def to_chunks(self, result: PdfTextResult) -> list[str]:
         chunks: list[str] = []

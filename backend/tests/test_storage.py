@@ -5,6 +5,7 @@ import pytest
 from starlette.datastructures import UploadFile
 
 from app.storage import LocalStorage, S3Storage, UploadValidationError
+import fitz
 
 
 @pytest.mark.asyncio
@@ -111,3 +112,20 @@ async def test_deleting_a_missing_object_is_not_an_error():
 
     storage.client = Broken()
     storage.delete("uploads/gone.pdf")  # must not raise
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("remote", [False, True])
+async def test_image_uploads_are_canonicalized_for_the_same_pipeline(tmp_path, remote):
+    document = fitz.open()
+    page = document.new_page(width=200, height=100)
+    page.insert_text((20, 40), "Reference Q7")
+    image = page.get_pixmap().tobytes("png")
+    document.close()
+    storage = s3_storage(max_bytes=100_000) if remote else LocalStorage(tmp_path, 100_000)
+    reference, size, name = await storage.save_pdf(UploadFile(filename="scan.png", file=BytesIO(image)))
+    assert name == "scan.png" and size == len(image)
+    with storage.local_copy(reference) as path:
+        with fitz.open(path) as converted:
+            assert converted.is_pdf and converted.page_count == 1
+            assert converted[0].get_image_info()

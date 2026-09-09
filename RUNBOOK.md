@@ -90,6 +90,14 @@ to bhi ginti galat nahi hoti.
 
 ## 4. Deploy kaise karna hai
 
+**9 September 2026 update:** service ab Gemini use karti hai aur versioned ECR tag
+`release-gemini-20260909` par pinned hai. Neeche purana `latest` workflow historical
+hai: sirf `latest` push karke `start-deployment` chalane se versioned image change
+nahi hogi. Agle deploy mein App Runner `ImageIdentifier` ko naye release tag par
+update karein aur existing environment/configuration preserve karein. Current
+release, rollback references aur verification: [deployment record](docs/DEPLOYMENT_2026-09-09.md).
+Gemini settings aur pacing: [provider guide](docs/GEMINI_PROVIDER.md).
+
 ### Pehli baar setup (ho chuka hai)
 
 ```powershell

@@ -39,14 +39,17 @@ class FakeMistralService:
         return ExtractionOutcome({"invoice_number": "INV-100", "total": "INR 42"}, [], [], [], True)
 
 
-def test_job_runner_completes_with_structured_result(tmp_path, monkeypatch):
+@pytest.mark.parametrize("provider", ["mistral", "gemini"])
+def test_job_runner_completes_with_structured_result(tmp_path, monkeypatch, provider):
     from app import job_service
 
-    monkeypatch.setattr(job_service, "MistralDocumentService", FakeMistralService)
+    monkeypatch.setattr(job_service, "GeminiDocumentService" if provider == "gemini" else "MistralDocumentService", FakeMistralService)
     pdf_path = tmp_path / "invoice.pdf"
     make_pdf(pdf_path)
     settings = Settings(
         data_dir=tmp_path / "data",
+        ai_provider=provider,
+        gemini_api_key=SecretStr("test"),
         mistral_api_key=SecretStr("test"),
         ocr_min_text_chars=10,
     )
@@ -72,6 +75,8 @@ def test_job_runner_completes_with_structured_result(tmp_path, monkeypatch):
     assert completed.progress == 100
     assert completed.result["data"]["invoice_number"] == "INV-100"
     assert completed.result["document"]["page_count"] == 1
+    assert completed.result["document"]["ai_provider"] == provider
+    assert completed.result["document"]["verification_model"] == settings.verification_model
 
 
 def run_blank_job(tmp_path, monkeypatch, fake_service):

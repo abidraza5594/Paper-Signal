@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -42,6 +43,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] | str = ["http://localhost:4200"]
 
     mistral_api_key: SecretStr | None = None
+    ai_provider: Literal["mistral", "gemini"] = "mistral"
+    gemini_api_key: SecretStr | None = None
+    gemini_text_model: str = "gemini-3.5-flash"
+    gemini_verification_model: str = "gemini-3.5-flash"
+    gemini_min_request_interval_seconds: float = Field(default=15, ge=0, le=300)
     mistral_api_keys: SecretStr | None = None
     mistral_text_model: str = "mistral-small-2603"
     mistral_verification_model: str = "mistral-large-2512"
@@ -91,7 +97,21 @@ class Settings(BaseSettings):
 
     @property
     def ai_configured(self) -> bool:
+        if self.ai_provider == "gemini":
+            return bool(self.gemini_api_key and self.gemini_api_key.get_secret_value().strip())
         return bool(self.mistral_key_values)
+
+    @property
+    def text_model(self) -> str:
+        return self.gemini_text_model if self.ai_provider == "gemini" else self.mistral_text_model
+
+    @property
+    def verification_model(self) -> str:
+        return self.gemini_verification_model if self.ai_provider == "gemini" else self.mistral_verification_model
+
+    @property
+    def ocr_model(self) -> str:
+        return self.gemini_text_model if self.ai_provider == "gemini" else self.mistral_ocr_model
 
     @property
     def mistral_key_values(self) -> list[str]:

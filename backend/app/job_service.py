@@ -10,6 +10,7 @@ from threading import BoundedSemaphore
 from .config import Settings
 from .database import JobDatabase
 from .mistral_service import AiExtractionError, MistralDocumentService
+from .gemini_service import GeminiDocumentService
 from .models import ExtractionResult, JobStatus, OcrMode
 from .pdf_service import PdfProcessingError, PdfTextService
 from .schema_service import OutputSchemaError, parse_output_contract
@@ -87,7 +88,7 @@ class JobRunner:
                 job_id, progress=15, stage="Checking page text", page_count=extracted.page_count
             )
 
-            ai = MistralDocumentService(self.settings)
+            ai = GeminiDocumentService(self.settings) if self.settings.ai_provider == "gemini" else MistralDocumentService(self.settings)
             vision_attempted_pages = 0
             vision_pages = 0
             vision_failed_pages = 0
@@ -127,6 +128,10 @@ class JobRunner:
                                 vision_text[page_number] = text
                             else:
                                 ocr_targets.append(page_number)
+                        except AiExtractionError as exc:
+                            if exc.failure_code in {"AI_AUTH_FAILED", "AI_RATE_LIMITED", "AI_PROVIDER_UNAVAILABLE"}:
+                                raise
+                            ocr_targets.append(page_number)
                         except Exception:
                             logger.warning(
                                 "Vision fallback failed for job %s page %s; using OCR",
@@ -193,14 +198,15 @@ class JobRunner:
                     "vision_failed_pages": vision_failed_pages,
                     "text_sections": sum(len(p.layout.windows) for p in extracted.pages if p.layout),
                     "schema_valid": outcome.schema_valid,
-                    "verification_model": self.settings.mistral_verification_model,
+                    "ai_provider": self.settings.ai_provider,
+                    "verification_model": self.settings.verification_model,
                     "validation_paths": outcome.validation_paths,
                     **({"extraction_debug": outcome.debug} if self.settings.extraction_debug else {}),
-                    "text_model": self.settings.mistral_text_model,
+                    "text_model": self.settings.text_model,
                     "vision_model": (
-                        self.settings.mistral_text_model if vision_attempted_pages else None
+                        self.settings.text_model if vision_attempted_pages else None
                     ),
-                    "ocr_model": self.settings.mistral_ocr_model if ocr_targets else None,
+                    "ocr_model": self.settings.ocr_model if ocr_targets else None,
                     "schema_mode": job.schema_mode,
                     "duration_ms": duration_ms,
                 },

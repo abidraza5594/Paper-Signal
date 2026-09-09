@@ -70,6 +70,7 @@ Open `http://localhost:4200`.
 
 The extraction architecture, supported normalization rules, debugging controls, and known limitations are documented in [docs/EXTRACTION_PIPELINE.md](docs/EXTRACTION_PIPELINE.md).
 Actual model comparisons, supplied-document results, and remaining accuracy gaps are recorded in [docs/EXTRACTION_VALIDATION.md](docs/EXTRACTION_VALIDATION.md).
+Gemini configuration and its separately measured migration checks are documented in [docs/GEMINI_PROVIDER.md](docs/GEMINI_PROVIDER.md).
 
 ```powershell
 cd backend

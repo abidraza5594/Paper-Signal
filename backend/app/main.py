@@ -190,9 +190,9 @@ def health() -> HealthResponse:
         max_pdf_pages=settings.max_pdf_pages,
         max_batch_files=settings.max_batch_files,
         max_batch_total_mb=settings.max_batch_total_mb,
-        text_model=settings.mistral_text_model,
-        vision_model=settings.mistral_text_model,
-        ocr_model=settings.mistral_ocr_model,
+        text_model=settings.text_model,
+        vision_model=settings.text_model,
+        ocr_model=settings.ocr_model,
     )
 
 
@@ -200,7 +200,7 @@ def _ensure_ai_configured() -> None:
     if not settings.ai_configured:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MISTRAL_API_KEYS is not configured in backend/.env.",
+            detail="The selected AI provider's API key is not configured on the server.",
         )
 
 
@@ -234,9 +234,9 @@ async def _prepare_job(
             output_template=output_template.strip(),
             ocr_mode=ocr_mode,
             page_count=page_count,
-            text_model=settings.mistral_text_model,
-            vision_model=settings.mistral_text_model,
-            ocr_model=settings.mistral_ocr_model,
+            text_model=settings.text_model,
+            vision_model=settings.text_model,
+            ocr_model=settings.ocr_model,
             schema_mode=schema_mode,
         )
     except Exception:
